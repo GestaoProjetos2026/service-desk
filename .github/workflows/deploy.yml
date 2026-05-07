@@ -1,0 +1,38 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set environment variables
+        id: set_env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "ENV_FILE=.env.production" >> $GITHUB_ENV
+            echo "ENV_NAME=production" >> $GITHUB_ENV
+          else
+            echo "ENV_FILE=.env.staging" >> $GITHUB_ENV
+            echo "ENV_NAME=staging" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy to Azure VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /path/to/your/app/${{ env.ENV_NAME }}
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            cp ${{ env.ENV_FILE }} .env
+            docker-compose build
+            docker-compose up -d
