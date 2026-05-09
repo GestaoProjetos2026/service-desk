@@ -11,10 +11,10 @@
 
 | ID       | Tarefa                                              | Status | Responsável      |
 |----------|-----------------------------------------------------|--------|------------------|
-| SERV-32  | Criar script de deploy GitHub Actions (TP04)        | ✅ Done | Yuri Santos      |
-| SERV-30  | Implementar endpoints de mensagens do ticket        | ✅ Done | Gabriele Silva   |
-| SERV-29  | Corrigir bug da migration do Alembic                | ✅ Done | Gabriele Silva   |
-| SERV-13  | Configuração do Ambiente de Homologação (Staging)   | ✅ Done | Sergio Escudeiro |
+| SERV-32  | Criar script de deploy GitHub Actions (TP04)        | ✅ Done | Pedro Paulo   |
+| SERV-30  | Implementar endpoints de mensagens do ticket        | ✅ Done | Athur Silles   |
+| SERV-29  | Corrigir bug da migration do Alembic                | ✅ Done | Gabriele Silva |
+| SERV-13  | Configuração do Ambiente de Homologação (Staging)   | ✅ Done | Pedro Paulo  |
 
 ---
 
