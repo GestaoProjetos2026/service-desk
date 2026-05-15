@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 # Import all models so Alembic can detect them
 import app.modules.tickets.model  # noqa: F401
+import app.modules.ticket_messages.model  # noqa: F401
 # import app.modules.users.model  # noqa: F401  ← add future modules here
 
 from app.config.config import settings
