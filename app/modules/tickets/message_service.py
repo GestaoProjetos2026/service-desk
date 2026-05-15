@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.modules.tickets.message_repository import MessageRepository
 from app.modules.tickets.repository import TicketRepository
-from app.modules.tickets.model import Ticket, TicketMessage
+from app.modules.tickets.model import Ticket
+from app.modules.ticket_messages.model import TicketMessage
 from app.modules.tickets.schema import TicketMessageCreate
 
 
