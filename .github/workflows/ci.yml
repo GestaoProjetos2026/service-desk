@@ -49,4 +49,4 @@ jobs:
           DB_PASSWORD: root_pass
           APP_ENV: testing
         run: |
-          pytest
+          python -m pytest

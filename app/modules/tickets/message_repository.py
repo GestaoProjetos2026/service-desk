@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.tickets.model import TicketMessage
+from app.modules.ticket_messages.model import TicketMessage
 from app.modules.tickets.schema import TicketMessageCreate
 from app.modules.tickets.repository import serialize_identifiers
 

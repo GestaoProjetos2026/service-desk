@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.modules.ticket_messages.schema import TicketMessageResponse
 from app.modules.tickets.model import TicketPriority, TicketStatus
 
 

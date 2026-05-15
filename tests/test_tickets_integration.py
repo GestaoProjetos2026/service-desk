@@ -44,6 +44,9 @@ def test_list_tickets_returns_created_records(client):
         description="Office printer stopped responding during the morning",
         category="hardware",
     )
+    import time
+    time.sleep(1)
+    
     second = create_ticket(
         client,
         title="Email issue",
