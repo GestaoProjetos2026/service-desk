@@ -40,3 +40,8 @@ Definição de Políticas de SLA.md
 # Database
 mysql_data/
 *.db
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/
