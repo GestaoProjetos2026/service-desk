@@ -9,9 +9,9 @@ from app.modules.tickets.schema import TicketCreate, TicketUpdate
 
 from fastapi import HTTPException, status
 
-UUID_FIELDS = {"user_id", "client_id", "assigned_to", "updated_by", "ticket_id"}
+UUID_FIELDS = {"user_id", "client_id", "assigned_to", "updated_by", "ticket_id", "author_id"}
 ALLOWED_TRANSITIONS = {
-    TicketStatus.pending: {TicketStatus.in_process},
+    TicketStatus.pending: {TicketStatus.in_process, TicketStatus.done, TicketStatus.canceled},
     TicketStatus.in_process: {TicketStatus.done, TicketStatus.canceled},
     TicketStatus.done: set(),
     TicketStatus.canceled: set(),

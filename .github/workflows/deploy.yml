@@ -28,13 +28,22 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 30m
           script: |
             # Navigate to the appropriate environment folder on your Azure VPS
-            # Ensure this directory is created beforehand on your server!
+            mkdir -p /home/azureuser/service-desk/${{ env.ENV_NAME }}
             cd /home/azureuser/service-desk/${{ env.ENV_NAME }}
-            git fetch origin
-            git checkout ${{ github.ref_name }}
-            git pull origin ${{ github.ref_name }}
+            
+            if [ ! -d ".git" ]; then
+              echo "Cloning repository from scratch..."
+              git clone -b ${{ github.ref_name }} https://github.com/${{ github.repository }}.git .
+            else
+              echo "Updating existing repository..."
+              git fetch origin
+              git checkout ${{ github.ref_name }}
+              git reset --hard origin/${{ github.ref_name }}
+            fi
+            
             cp ${{ env.ENV_FILE }} .env
             docker compose build
             docker compose up -d

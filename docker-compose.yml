@@ -34,8 +34,8 @@ services:
       DB_NAME: ${DB_NAME:-service_desk}
       DB_USER: ${DB_USER:-service_user}
       DB_PASSWORD: ${DB_PASSWORD:-service_pass}
-      APP_ENV: production
-      APP_DEBUG: "false"
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
     command: python -m alembic upgrade head
     depends_on:
       mysql:
@@ -64,6 +64,18 @@ services:
     depends_on:
       migration:
         condition: service_completed_successfully
+    networks:
+      - service-desk-network
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: service-desk-frontend
+    ports:
+      - "80:80"
     networks:
       - service-desk-network
     restart: unless-stopped
