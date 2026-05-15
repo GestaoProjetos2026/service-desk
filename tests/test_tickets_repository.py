@@ -34,7 +34,7 @@ def test_get_by_id_delegates_to_session(session):
 def test_list_all_returns_total_and_items(session):
     repository = TicketRepository(session)
     older = repository.create(make_ticket_data("Older ticket", "First issue description"))
-    sleep(0.01)
+    sleep(1)
     newer = repository.create(make_ticket_data("Newer ticket", "Second issue description"))
     total, result_items = repository.list_all(skip=0, limit=10)
 

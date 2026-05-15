@@ -58,7 +58,7 @@ def test_list_by_ticket_returns_messages_ordered_by_created_at(session):
     repo = MessageRepository(session)
 
     first = repo.create(ticket.id, _make_message_data("First message"))
-    sleep(0.01)
+    sleep(1)
     second = repo.create(ticket.id, _make_message_data("Second message"))
 
     total, items = repo.list_by_ticket(ticket.id, skip=0, limit=50)
@@ -125,7 +125,7 @@ def test_list_by_ticket_pagination(session):
     repo = MessageRepository(session)
 
     for i in range(5):
-        sleep(0.01)
+        sleep(1)
         repo.create(ticket.id, _make_message_data(f"Message {i+1}"))
 
     total, page = repo.list_by_ticket(ticket.id, skip=2, limit=2)
