@@ -21,16 +21,22 @@ from app.modules.ticket_messages.model import TicketMessage
 
 @pytest.fixture
 def engine():
-    db_user = os.getenv("DB_USER")
-    db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST")
-    db_port = os.getenv("DB_PORT")
-    db_name = os.getenv("DB_NAME")
+    use_sqlite = os.getenv("TEST_USE_SQLITE", "1") == "1"
     
-    database_url = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-    
-    engine = create_engine(database_url)
-    Base.metadata.create_all(engine, tables=[Ticket.__table__, TicketMessage.__table__])
+    if use_sqlite:
+        database_url = "sqlite:///:memory:"
+        engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    else:
+        db_user = os.getenv("DB_USER")
+        db_password = os.getenv("DB_PASSWORD")
+        db_host = os.getenv("DB_HOST")
+        db_port = os.getenv("DB_PORT")
+        db_name = os.getenv("DB_NAME")
+        
+        database_url = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        engine = create_engine(database_url)
+        
+    Base.metadata.create_all(engine)
 
     yield engine
 
