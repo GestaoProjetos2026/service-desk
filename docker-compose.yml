@@ -1,0 +1,89 @@
+version: '3.9'
+
+services:
+  # MySQL Database Service
+  mysql:
+    image: mysql:8.0
+    container_name: service-desk-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: ${DB_NAME:-service_desk}
+      MYSQL_USER: ${DB_USER:-service_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-service_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-service_user}", "-p${DB_PASSWORD:-service_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - service-desk-network
+
+  # Alembic Migration Service
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: service-desk-migration
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-service_desk}
+      DB_USER: ${DB_USER:-service_user}
+      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+    command: python -m alembic upgrade head
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - service-desk-network
+    restart: "no"
+
+  # FastAPI Application Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: service-desk-api
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-service_desk}
+      DB_USER: ${DB_USER:-service_user}
+      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
+      APP_NAME: ${APP_NAME:-service-desk}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - service-desk-network
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: service-desk-frontend
+    ports:
+      - "80:80"
+    networks:
+      - service-desk-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  service-desk-network:
+    driver: bridge

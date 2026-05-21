@@ -99,6 +99,22 @@ O frontend será responsável por:
 * Visualizar status
 * Comunicação com API do Service Desk
 
+Tela Inicial
+
+![Tela inicial do aplicativo proposto](./docs/images/dashboard_section.png)
+
+Tela de Tickets
+
+![Tela dos tickets do aplicativo proposto](./docs/images/tickets_section.png)
+
+Tela de Mensagens
+
+![Tela de mensagens do aplicativo proposto](./docs/images/messages_section.png)
+
+Tela de Configurações
+
+![Tela de configurações do aplicativo proposto](./docs/images/settings_section.png)
+
 ---
 
 ## 📊 Gestão no Plane.so
