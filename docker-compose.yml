@@ -25,7 +25,7 @@ services:
   # Alembic Migration Service
   migration:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-migration
     environment:
@@ -47,7 +47,7 @@ services:
   # FastAPI Application Service
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-api
     environment:
