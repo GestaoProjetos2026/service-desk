@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import BOOLEAN, CHAR, Enum as SqlEnum, ForeignKey, String, Text, TIMESTAMP
+from sqlalchemy import CHAR, Enum as SqlEnum, ForeignKey, String, Text, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.config.database import Base

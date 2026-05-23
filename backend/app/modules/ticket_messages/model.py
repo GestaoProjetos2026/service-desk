@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import BOOLEAN, CHAR, ForeignKey, Text, TIMESTAMP
+from sqlalchemy import Boolean, CHAR, ForeignKey, Text, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.config.database import Base
@@ -23,7 +23,7 @@ class TicketMessage(Base):
     )
     author_id: Mapped[str | None] = mapped_column(CHAR(36), nullable=True, index=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    is_internal: Mapped[bool] = mapped_column(BOOLEAN, default=False, nullable=False)
+    is_internal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP,

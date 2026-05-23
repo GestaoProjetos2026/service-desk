@@ -4,9 +4,9 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (for MySQL client)
+# Install system dependencies (PostgreSQL client + libs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    default-mysql-client \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
