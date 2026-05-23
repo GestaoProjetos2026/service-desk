@@ -1,21 +1,20 @@
 version: '3.9'
 
 services:
-  # MySQL Database Service
-  mysql:
-    image: mysql:8.0
-    container_name: service-desk-mysql
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: service-desk-postgres
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
-      MYSQL_DATABASE: ${DB_NAME:-service_desk}
-      MYSQL_USER: ${DB_USER:-service_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-service_pass}
+      POSTGRES_DB: ${DB_NAME:-service_desk}
+      POSTGRES_USER: ${DB_USER:-service_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-service_pass}
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-service_user}", "-p${DB_PASSWORD:-service_pass}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-service_user} -d ${DB_NAME:-service_desk}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,8 +28,8 @@ services:
       dockerfile: Dockerfile
     container_name: service-desk-migration
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_HOST: postgres
+      DB_PORT: 5432
       DB_NAME: ${DB_NAME:-service_desk}
       DB_USER: ${DB_USER:-service_user}
       DB_PASSWORD: ${DB_PASSWORD:-service_pass}
@@ -38,7 +37,7 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
     command: python -m alembic upgrade head
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     networks:
       - service-desk-network
@@ -51,8 +50,8 @@ services:
       dockerfile: Dockerfile
     container_name: service-desk-api
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_HOST: postgres
+      DB_PORT: 5432
       DB_NAME: ${DB_NAME:-service_desk}
       DB_USER: ${DB_USER:-service_user}
       DB_PASSWORD: ${DB_PASSWORD:-service_pass}
@@ -81,7 +80,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
+  postgres_data:
     driver: local
 
 networks:
