@@ -11,4 +11,3 @@ venv/
 .ruff_cache/
 docs/ARCHITECTURE.md
 node_modules/
-backend/.env
