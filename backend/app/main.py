@@ -8,6 +8,7 @@ from app.modules.knowledge_base.routes import router as knowledge_base_router
 from app.modules.tickets.routes import router as tickets_router
 from app.modules.ticket_messages.routes import router as ticket_messages_router
 from app.modules.sla.routes import router as sla_router
+from app.modules.integration.routes import router as integration_router
 
 
 print("[DEBUG] app.main loaded")
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets_router)
     app.include_router(ticket_messages_router)
     app.include_router(sla_router)
+    app.include_router(integration_router)
 
     return app
 
