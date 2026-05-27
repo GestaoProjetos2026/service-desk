@@ -28,11 +28,7 @@ services:
       dockerfile: Dockerfile
     container_name: service-desk-migration
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-service_desk}
-      DB_USER: ${DB_USER:-service_user}
-      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
+      DATABASE_URL: postgresql://${DB_USER:-service_user}:${DB_PASSWORD:-service_pass}@postgres:5432/${DB_NAME:-service_desk}
       APP_ENV: ${APP_ENV:-production}
       APP_DEBUG: ${APP_DEBUG:-false}
     command: python -m alembic upgrade head
@@ -50,11 +46,7 @@ services:
       dockerfile: Dockerfile
     container_name: service-desk-api
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-service_desk}
-      DB_USER: ${DB_USER:-service_user}
-      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
+      DATABASE_URL: postgresql://${DB_USER:-service_user}:${DB_PASSWORD:-service_pass}@postgres:5432/${DB_NAME:-service_desk}
       APP_NAME: ${APP_NAME:-service-desk}
       APP_ENV: ${APP_ENV:-production}
       APP_DEBUG: ${APP_DEBUG:-false}
