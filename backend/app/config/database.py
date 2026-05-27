@@ -9,8 +9,16 @@ from app.config.config import settings
 class Base(DeclarativeBase):
     pass
 
+
+def _get_sqlalchemy_url(url: str) -> str:
+    """Garante o driver psycopg2 na URL do SQLAlchemy."""
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 engine = create_engine(
-    settings.database_url,
+    _get_sqlalchemy_url(settings.database_url),
     echo=settings.app_debug,
     pool_pre_ping=True,
     pool_recycle=3600,

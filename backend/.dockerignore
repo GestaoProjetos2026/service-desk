@@ -26,7 +26,6 @@ pip-delete-this-directory.txt
 .DS_Store
 
 # Project
-.env
 .env.local
 tests/
 docs/
