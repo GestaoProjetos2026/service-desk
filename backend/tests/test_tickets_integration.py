@@ -1,9 +1,11 @@
 from uuid import uuid4
 
+PREFIX = "/api/v1"
+
 
 def create_ticket(client, title: str, description: str, category: str = "network"):
     response = client.post(
-        "/tickets",
+        f"{PREFIX}/tickets",
         json={
             "title": title,
             "description": description,
@@ -28,7 +30,7 @@ def test_create_and_get_ticket_end_to_end(client):
         description="Remote employee cannot connect to the VPN server",
     )
 
-    response = client.get(f"/tickets/{created['id']}")
+    response = client.get(f"{PREFIX}/tickets/{created['id']}")
 
     assert response.status_code == 200
     body = response.json()
@@ -46,7 +48,7 @@ def test_list_tickets_returns_created_records(client):
     )
     import time
     time.sleep(1)
-    
+
     second = create_ticket(
         client,
         title="Email issue",
@@ -54,7 +56,7 @@ def test_list_tickets_returns_created_records(client):
         category="software",
     )
 
-    response = client.get("/tickets")
+    response = client.get(f"{PREFIX}/tickets")
 
     assert response.status_code == 200
     body = response.json()
@@ -71,7 +73,7 @@ def test_update_ticket_marks_done_and_sets_closed_at(client):
     )
 
     response = client.patch(
-        f"/tickets/{created['id']}",
+        f"{PREFIX}/tickets/{created['id']}",
         json={"status": "done", "category": "access"},
     )
 
@@ -83,7 +85,7 @@ def test_update_ticket_marks_done_and_sets_closed_at(client):
 
 
 def test_get_missing_ticket_returns_404(client):
-    response = client.get(f"/tickets/{uuid4()}")
+    response = client.get(f"{PREFIX}/tickets/{uuid4()}")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Ticket not found"}
