@@ -1,78 +1,39 @@
 """
-Endpoints de integração inter-squads do Service Desk.
+Endpoints de integração inter-squads do Service Desk → Fiscal Finance.
 
 Prefixo: /api/v1/integration
 
 Rotas disponíveis:
-  GET  /integration/health                      → status das integrações
-  GET  /integration/core-engine/users/{user_id} → valida usuário no Core Engine
+  GET  /integration/health                      → status da integração
   GET  /integration/fiscal/products/{sku}       → consulta produto no Fiscal Finance
   GET  /integration/fiscal/stock/{sku}          → consulta estoque no Fiscal Finance
   GET  /integration/fiscal/cashflow             → resumo financeiro do Fiscal Finance
+  GET  /integration/fiscal/history/{sku}        → histórico de movimentações por SKU
 """
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.modules.integration.client import core_engine_client, fiscal_finance_client
+from app.modules.integration.client import fiscal_finance_client
 
 router = APIRouter(prefix="/integration", tags=["Integration"])
 
 
-# ── Health geral das integrações ──────────────────────────────────────────────
+# ── Health da integração ──────────────────────────────────────────────────────
 
-@router.get("/health", summary="Status das integrações externas")
+@router.get("/health", summary="Status da integração com Fiscal Finance")
 def integration_health():
     """
-    Verifica a conectividade do Service Desk com as squads externas:
-    - Core Engine (NestJS)
-    - Fiscal Finance (Flask)
+    Verifica a conectividade do Service Desk com o Squad Fiscal Finance.
     """
-    core_status = core_engine_client.health()
     fisc_status = fiscal_finance_client.health()
-
-    tudo_ok = (
-        core_status.get("status") == "ok"
-        and fisc_status.get("status") == "ok"
-    )
 
     return {
         "service_desk": "ok",
         "integrations": {
-            "core_engine": core_status,
             "fiscal_finance": fisc_status,
         },
-        "overall": "ok" if tudo_ok else "degraded",
+        "overall": "ok" if fisc_status.get("status") == "ok" else "degraded",
     }
-
-
-# ── Core Engine ───────────────────────────────────────────────────────────────
-
-@router.get(
-    "/core-engine/users/{user_id}",
-    summary="Valida usuário no Core Engine",
-    description=(
-        "Consulta o Core Engine para verificar se um usuário existe. "
-        "Útil para validar user_id antes de criar ou atribuir um ticket."
-    ),
-)
-def validar_usuario_core_engine(user_id: str):
-    """
-    Retorna os dados do usuário se ele existir no Core Engine,
-    ou 404 se não for encontrado.
-    """
-    resultado = core_engine_client.validar_usuario(user_id)
-
-    if resultado.get("valido"):
-        return {
-            "status": "encontrado",
-            "user_id": user_id,
-            "usuario": resultado.get("usuario"),
-        }
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=resultado.get("erro", "Usuário não encontrado no Core Engine"),
-    )
 
 
 # ── Fiscal Finance ────────────────────────────────────────────────────────────
@@ -139,4 +100,25 @@ def resumo_financeiro_fiscal():
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=resultado.get("erro", "Erro ao obter resumo financeiro"),
+    )
+
+
+@router.get(
+    "/fiscal/history/{sku}",
+    summary="Histórico de movimentações por SKU no Fiscal Finance",
+    description="Retorna todas as movimentações de entrada e saída de um produto.",
+)
+def consultar_historico_fiscal(sku: str):
+    resultado = fiscal_finance_client.consultar_historico(sku)
+
+    if resultado.get("sucesso"):
+        return {
+            "status": "encontrado",
+            "sku": sku,
+            "historico": resultado.get("historico"),
+        }
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=resultado.get("erro", f"Histórico do produto '{sku}' não encontrado"),
     )
