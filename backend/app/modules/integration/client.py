@@ -84,7 +84,7 @@ class CoreEngineClient:
                 )
             resp.raise_for_status()
             data = resp.json()
-            token = data.get("access_token")
+            token = data.get("data", {}).get("access_token")
             logger.info("[CoreEngine] Token M2M obtido com sucesso.")
             return token
         except httpx.HTTPStatusError as exc:
@@ -152,7 +152,7 @@ class CoreEngineClient:
         """Verifica se o Core Engine está acessível."""
         try:
             with httpx.Client(timeout=HTTP_TIMEOUT) as http:
-                resp = http.get(f"{self.base_url}/health")
+                resp = http.get(f"{self.base_url}/v1/health")  # corrigido: era /health
             return {"status": "ok" if resp.status_code == 200 else "degraded", "code": resp.status_code}
         except httpx.RequestError as exc:
             return {"status": "unreachable", "erro": str(exc)}
