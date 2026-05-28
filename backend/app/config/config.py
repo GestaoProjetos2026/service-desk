@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     database_url: str
 
     # Integração: Fiscal Finance (Squad 2)
-    fiscal_finance_url: str = "http://backend-svc.fiscal-finance.svc.cluster.local:5000"
+    fiscal_finance_url: str = "http://fiscal-finance-backend-svc.fiscal-finance.svc.cluster.local:5000"
     fisc_api_key: str = "FISC-PUBLIC-2026-SQUAD4"
 
     # Timeout para chamadas inter-squads (segundos)

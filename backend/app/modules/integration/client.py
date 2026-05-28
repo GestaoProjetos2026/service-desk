@@ -4,8 +4,7 @@ Cliente HTTP para integração com o Squad Fiscal Finance.
 FiscalFinanceClient → consulta produtos, estoque e resumo financeiro
 via Fiscal Finance (Flask, porta 5000).
 
-URL interna Kubernetes:
-  http://backend-svc.fiscal-finance.svc.cluster.local:5000
+
 """
 
 import logging
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ── URL interna (Kubernetes) ───────────────────────────────────────────────────
 FISCAL_FINANCE_BASE_URL = os.getenv(
     "FISCAL_FINANCE_URL",
-    "http://backend-svc.fiscal-finance.svc.cluster.local:5000",
+    "http://fiscal-finance-backend-svc.fiscal-finance.svc.cluster.local:5000",  
 )
 
 # API Key autorizada pelo Squad FISC para o Squad Service-Desk
