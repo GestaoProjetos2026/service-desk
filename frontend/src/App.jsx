@@ -4,6 +4,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
 import * as authApi from "./api/auth.js";
+import * as ticketsApi from "./api/tickets.js";
 import { ApiError } from "./api/client.js";
 
 // ─── DESIGN TOKENS (ADR Comitê UX/UI) ────────────────────────────────────────
@@ -143,10 +144,25 @@ const CHURN_DATA = {
   ],
 };
 
-const USERS_DB = {
-  agent: { name: "Alex Morgan",  email: "alex@conexus.io",    role: "agent", avatar: "AM" },
-  user:  { name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
-};
+// ─── USUÁRIO LOGADO ──────────────────────────────────────────────────────────
+// Constrói o objeto de usuário consumido pelas telas (Sidebar, Settings, etc.)
+// a partir do perfil real devolvido por GET /api/v1/auth/me.
+function buildUserFromProfile(profile, role) {
+  const safe = profile || {};
+  const email = safe.email || "";
+  const name  = (safe.name && safe.name.trim()) || (email ? email.split("@")[0] : "Usuário");
+  const initials = name
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(s => s[0].toUpperCase()).join("") || "U";
+  return {
+    id:     safe.id,
+    name,
+    email,
+    role,
+    avatar: initials,
+    roles:  safe.roles || [],
+  };
+}
 // ─── INTEGRAÇÃO FISCAL (Squad 2) ─────────────────────────────────────────────
 async function buscarHistoricoFiscal(sku) {
   try {
@@ -374,6 +390,8 @@ function Login({ onLogin }) {
   const [err, setErr]         = useState("");
   const [info, setInfo]       = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPass,  setShowPass]  = useState(false);
+  const [showPass2, setShowPass2] = useState(false);
 
   // Mapeia roles do Core Engine → perfis internos do Service Desk
   const inferRole = (profile) => {
@@ -391,7 +409,7 @@ function Login({ onLogin }) {
     const pw = overridePass ?? pass;
     await authApi.login(em, pw);
     const profile = await authApi.me();
-    return onLogin(inferRole(profile));
+    return onLogin(inferRole(profile), profile);
   };
 
   const handleLogin = async () => {
@@ -414,8 +432,14 @@ function Login({ onLogin }) {
         return;
       }
       // 2) Fallback demo (mantém UX quando backend indisponível)
-      if (email === "alex@conexus.io"   && pass === "123") { setLoading(false); return onLogin("agent"); }
-      if (email === "diego@empresa.com" && pass === "123") { setLoading(false); return onLogin("user");  }
+      if (email === "alex@conexus.io"   && pass === "123") {
+        setLoading(false);
+        return onLogin("agent", { id: "demo-agent", name: "Alex Morgan", email, roles: ["agent"] });
+      }
+      if (email === "diego@empresa.com" && pass === "123") {
+        setLoading(false);
+        return onLogin("user",  { id: "demo-user",  name: "Diego Ramos", email, roles: ["user"]  });
+      }
       setErr("E-mail ou senha inválidos."); setLoading(false);
     }
   };
@@ -513,15 +537,45 @@ function Login({ onLogin }) {
                 value={email} onChange={e => { setEmail(e.target.value); setErr(""); }} />
             </Field>
             <Field label="Senha">
-              <Input type="password" placeholder="••••••••"
-                value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
-                onKeyDown={e => e.key === "Enter" && mode === "login" && handle()} />
+              <div style={{ position: "relative" }}>
+                <Input type={showPass ? "text" : "password"} placeholder="••••••••"
+                  value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && mode === "login" && handle()}
+                  style={{ paddingRight: 40 }} />
+                <button type="button" onClick={() => setShowPass(v => !v)}
+                  style={{
+                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: T.textMuted, padding: 0, lineHeight: 1,
+                  }}
+                  title={showPass ? "Ocultar senha" : "Mostrar senha"}>
+                  {showPass
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                </button>
+              </div>
             </Field>
             {mode === "register" && (
               <Field label="Confirmar senha">
-                <Input type="password" placeholder="••••••••"
-                  value={pass2} onChange={e => { setPass2(e.target.value); setErr(""); }}
-                  onKeyDown={e => e.key === "Enter" && handle()} />
+                <div style={{ position: "relative" }}>
+                  <Input type={showPass2 ? "text" : "password"} placeholder="••••••••"
+                    value={pass2} onChange={e => { setPass2(e.target.value); setErr(""); }}
+                    onKeyDown={e => e.key === "Enter" && handle()}
+                    style={{ paddingRight: 40 }} />
+                  <button type="button" onClick={() => setShowPass2(v => !v)}
+                    style={{
+                      position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                      background: "none", border: "none", cursor: "pointer",
+                      color: T.textMuted, padding: 0, lineHeight: 1,
+                    }}
+                    title={showPass2 ? "Ocultar senha" : "Mostrar senha"}>
+                    {showPass2
+                      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    }
+                  </button>
+                </div>
               </Field>
             )}
             {info && (
@@ -1472,25 +1526,57 @@ function Settings({ user, role }) {
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [role, setRole]                 = useState(null);
+  const [user, setUser]                 = useState(null);   // perfil real vindo de /auth/me
   const [page, setPage]                 = useState("dashboard");
-  const [tickets, setTickets]           = useState(TICKETS_INIT);
-  const [activeTicket, setActiveTicket] = useState("SD-101");
+  const [tickets, setTickets]           = useState([]);
+  const [activeTicket, setActiveTicket] = useState(null);
   const [showNew, setShowNew]           = useState(false);
 
-  const user = role ? USERS_DB[role] : null;
+  // Carrega tickets do backend assim que houver usuário autenticado.
+  // Em caso de falha (backend offline), cai no conjunto mockado para não
+  // quebrar a demo.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await ticketsApi.listTickets({ limit: 100 });
+        if (cancelled) return;
+        const items = (data && data.items) || [];
+        const ui = items.map(t => ticketsApi.toUi(t, user.name));
+        setTickets(ui);
+        if (ui.length) setActiveTicket(ui[0].id);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("Falha ao carregar tickets, usando mock:", err.message);
+        setTickets(TICKETS_INIT);
+        setActiveTicket("SD-101");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
-  const handleCreate = (form) => {
-    const t = {
-      id:       `SD-${Math.floor(200 + Math.random() * 800)}`,
-      title:    form.title, desc: form.desc,
-      status:   "pending",  priority: form.priority,
-      cat:      form.cat,   user: user.name,
-      created:  new Date().toLocaleDateString("pt-BR"),
-      msgs:     [],
-    };
-    // TODO: POST /api/v1/tickets { ...t }
-    setTickets(ts => [t, ...ts]);
-    setActiveTicket(t.id);
+  const handleCreate = async (form) => {
+    // Persiste no backend. Em caso de erro, mantém o fluxo demo local.
+    try {
+      const payload = ticketsApi.toApi({ ...form, status: "pending" }, user && user.id);
+      const created = await ticketsApi.createTicket(payload);
+      const t = ticketsApi.toUi(created, user.name);
+      setTickets(ts => [t, ...ts]);
+      setActiveTicket(t.id);
+    } catch (err) {
+      console.warn("Falha ao criar ticket no backend, salvando localmente:", err.message);
+      const t = {
+        id:       `SD-${Math.floor(200 + Math.random() * 800)}`,
+        title:    form.title, desc: form.desc,
+        status:   "pending",  priority: form.priority,
+        cat:      form.cat,   user: user.name,
+        created:  new Date().toLocaleDateString("pt-BR"),
+        msgs:     [],
+      };
+      setTickets(ts => [t, ...ts]);
+      setActiveTicket(t.id);
+    }
   };
 
   const PAGE_TITLE = {
@@ -1500,12 +1586,22 @@ export default function App() {
 
   const showNewBtn = (page === "dashboard" || page === "tickets");
 
-  if (!role) return <Login onLogin={r => { setRole(r); setPage("dashboard"); }} />;
+  if (!role || !user) {
+    return (
+      <Login
+        onLogin={(r, profile) => {
+          setRole(r);
+          setUser(buildUserFromProfile(profile, r));
+          setPage("dashboard");
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", background: T.bgApp, color: T.textPrimary, fontFamily: "'Inter', system-ui, sans-serif", overflow: "hidden" }}>
       <Sidebar role={role} page={page} setPage={setPage} user={user}
-        onLogout={() => { authApi.logout(); setRole(null); setPage("dashboard"); }} />
+        onLogout={() => { authApi.logout(); setRole(null); setUser(null); setPage("dashboard"); }} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Topbar title={PAGE_TITLE[page]} onNew={showNewBtn ? () => setShowNew(true) : undefined} />

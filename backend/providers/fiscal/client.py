@@ -52,7 +52,7 @@ class FiscalClient:
     """Async HTTP client for the Fiscal Finance API."""
 
     def __init__(self, timeout: float = 10.0, api_key: str | None = None) -> None:
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, verify=False)
         self._api_key = api_key or settings.fisc_api_key
 
     def _headers(self) -> dict:

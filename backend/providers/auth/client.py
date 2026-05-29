@@ -11,6 +11,7 @@ Usage example:
 
 from __future__ import annotations
 
+import re
 import httpx
 from typing import Optional
 
@@ -22,6 +23,65 @@ from .models import (
     TokenResponse,
     UserProfile,
 )
+
+_CAMEL_RE = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _normalize(data: dict) -> dict:
+    """Converte chaves camelCase do Core Engine para snake_case.
+
+    Também normaliza variações comuns:
+      - `_id`      → `id`
+      - `userId`   → `user_id` (e mantém)
+    """
+    if not isinstance(data, dict):
+        return {}
+    out: dict = {}
+    for k, v in data.items():
+        key = k.lstrip("_")  # remove leading underscore (ex: _id → id)
+        snake = _CAMEL_RE.sub("_", key).lower()
+        out[snake] = v
+    return out
+
+
+def _parse_user(data: dict) -> dict:
+    """Normaliza o payload de usuário aceitando variações comuns de envelope.
+
+    Aceita:
+      - `{ id, name, email, ... }`            (direto)
+      - `{ user: { ... } }`                   (envelope intermediário)
+      - `{ userId, fullName, emailAddress }`  (alternativas de nomes)
+    """
+    if not isinstance(data, dict):
+        return {}
+    # Desembrulha envelope intermediário { "user": {...} }
+    if "user" in data and isinstance(data["user"], dict) and "id" not in data and "email" not in data:
+        data = data["user"]
+
+    normalized = _normalize(data)
+
+    # Aliases tolerantes para campos required do UserProfile
+    if "id" not in normalized:
+        for alt in ("user_id", "uuid", "sub"):
+            if alt in normalized:
+                normalized["id"] = normalized[alt]
+                break
+    if "name" not in normalized:
+        for alt in ("full_name", "display_name", "username"):
+            if alt in normalized:
+                normalized["name"] = normalized[alt]
+                break
+    if "email" not in normalized:
+        for alt in ("email_address", "mail"):
+            if alt in normalized:
+                normalized["email"] = normalized[alt]
+                break
+
+    # IDs podem vir como inteiros — UserProfile espera str
+    if "id" in normalized and not isinstance(normalized["id"], str):
+        normalized["id"] = str(normalized["id"])
+
+    return normalized
 
 
 class AuthClientError(Exception):
@@ -57,7 +117,7 @@ class AuthClient:
     """Async HTTP client for the Core Engine & Auth API."""
 
     def __init__(self, timeout: float = 10.0) -> None:
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, verify=False)
 
     # ------------------------------------------------------------------
     # Auth
@@ -68,43 +128,62 @@ class AuthClient:
         payload = LoginRequest(email=email, password=password)
         response = await self._client.post(
             endpoints.AUTH_LOGIN,
-            json=payload.model_dump(),
+            json=payload.model_dump(by_alias=True),
         )
         _raise_for_error(response)
         data = response.json().get("data", {})
-        return TokenResponse(**data)
+        return TokenResponse(**_normalize(data))
 
     async def register(self, name: str, email: str, password: str) -> UserProfile:
         """POST /v1/auth/register — register a new user."""
         payload = RegisterRequest(name=name, email=email, password=password)
         response = await self._client.post(
             endpoints.AUTH_REGISTER,
-            json=payload.model_dump(),
+            json=payload.model_dump(by_alias=True),
         )
         _raise_for_error(response)
         data = response.json().get("data", {})
-        return UserProfile(**data)
+        return UserProfile(**_parse_user(data))
 
     async def refresh(self, refresh_token: str) -> TokenResponse:
         """POST /v1/auth/refresh — get a new access token."""
         payload = RefreshRequest(refresh_token=refresh_token)
         response = await self._client.post(
             endpoints.AUTH_REFRESH,
-            json=payload.model_dump(),
+            json=payload.model_dump(by_alias=True),
         )
         _raise_for_error(response)
         data = response.json().get("data", {})
-        return TokenResponse(**data)
+        return TokenResponse(**_normalize(data))
 
     async def me(self, access_token: str) -> UserProfile:
-        """GET /v1/auth/me — retrieve the current user profile."""
+        """GET /v1/auth/me — retrieve the current user profile.
+
+        Algumas variantes do Core Engine devolvem apenas `{user_id}` neste
+        endpoint. Para manter uma resposta utilizável, enriquecemos com
+        `GET /v1/users/{id}` de forma best-effort (sem propagar falha).
+        """
         response = await self._client.get(
             endpoints.AUTH_ME,
             headers={"Authorization": f"Bearer {access_token}"},
         )
         _raise_for_error(response)
         data = response.json().get("data", {})
-        return UserProfile(**data)
+        profile = UserProfile(**_parse_user(data))
+
+        # Enriquecimento opcional quando o /me devolve só o id.
+        if profile.id and (not profile.email or not profile.name):
+            try:
+                full = await self.get_user(profile.id, access_token)
+                merged = {**profile.model_dump(), **{
+                    k: v for k, v in full.model_dump().items() if v
+                }}
+                profile = UserProfile(**merged)
+            except AuthClientError:
+                # Não derruba o /me se /users/{id} falhar.
+                pass
+
+        return profile
 
     # ------------------------------------------------------------------
     # Users
@@ -119,7 +198,7 @@ class AuthClient:
         )
         _raise_for_error(response)
         data = response.json().get("data", {})
-        return UserProfile(**data)
+        return UserProfile(**_parse_user(data))
 
     # ------------------------------------------------------------------
     # Health
