@@ -11,8 +11,7 @@
 | **FastAPI** | 0.135.2 | Framework web principal (API REST) |
 | **Uvicorn** | 0.30.6 | Servidor ASGI para rodar a aplicação |
 | **SQLAlchemy** | 2.0.48 | ORM para mapeamento e acesso ao banco de dados |
-| **PyMySQL** | 1.1.1 | Driver de conexão com MySQL |
-| **Cryptography** | 43.0.1 | Suporte a conexões seguras (SSL/TLS) via PyMySQL |
+| **psycopg2-binary** | 2.9.9 | Driver de conexão com PostgreSQL |
 | **Alembic** | 1.13.3 | Ferramenta de migrations do banco de dados |
 | **python-dotenv** | 1.0.1 | Carregamento de variáveis de ambiente via `.env` |
 | **pydantic-settings** | 2.5.2 | Gerenciamento de configurações tipadas com Pydantic |
@@ -23,7 +22,8 @@
 
 ## 🗄️ Banco de Dados
 
-- **SGBD:** MySQL
+- **SGBD:** PostgreSQL
+- **Driver:** psycopg2 (`postgresql+psycopg2://`)
 - **ORM:** SQLAlchemy 2.x (modo moderno com `Mapped` / `mapped_column`)
 - **Migrations:** Alembic
 
@@ -44,9 +44,9 @@ Principal entidade da aplicação. Representa um chamado de suporte.
 | `assigned_to` | `CHAR(36)` | ID do atendente responsável |
 | `updated_by` | `CHAR(36)` | ID de quem fez a última atualização |
 | `category` | `VARCHAR(100)` | Categoria do chamado |
-| `closed_at` | `DATETIME` | Data/hora de fechamento |
-| `created_at` | `DATETIME` | Data/hora de criação |
-| `updated_at` | `DATETIME` | Data/hora da última atualização |
+| `closed_at` | `TIMESTAMP` | Data/hora de fechamento |
+| `created_at` | `TIMESTAMP` | Data/hora de criação |
+| `updated_at` | `TIMESTAMP` | Data/hora da última atualização |
 
 #### `ticket_messages`
 Mensagens vinculadas a um ticket (histórico de atendimento).
@@ -58,8 +58,8 @@ Mensagens vinculadas a um ticket (histórico de atendimento).
 | `author_id` | `CHAR(36)` | ID de quem enviou a mensagem |
 | `message` | `TEXT` | Conteúdo da mensagem |
 | `is_internal` | `BOOLEAN` | Se é uma nota interna (não visível ao cliente) |
-| `created_at` | `DATETIME` | Data/hora de criação |
-| `updated_at` | `DATETIME` | Data/hora da última atualização |
+| `created_at` | `TIMESTAMP` | Data/hora de criação |
+| `updated_at` | `TIMESTAMP` | Data/hora da última atualização |
 
 ---
 
@@ -68,21 +68,19 @@ Mensagens vinculadas a um ticket (histórico de atendimento).
 As configurações são carregadas via **pydantic-settings** a partir de um arquivo `.env`:
 
 ```
-DB_HOST=...
-DB_PORT=3306
-DB_NAME=...
-DB_USER=...
-DB_PASSWORD=...
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 APP_ENV=development
 APP_DEBUG=false
 APP_NAME=service-desk
 API_PREFIX=/api/v1
+
+# Integrações externas
+CORE_ENGINE_URL=...
+FISCAL_FINANCE_URL=...
+FISC_API_KEY=...
 ```
 
-A URL de conexão é montada automaticamente no formato:
-```
-mysql+pymysql://<user>:<password>@<host>:<port>/<db_name>
-```
+A URL é fornecida diretamente via `DATABASE_URL`. O `database.py` normaliza automaticamente `postgresql://` para `postgresql+psycopg2://` antes de criar a engine.
 
 ---
 
@@ -155,7 +153,8 @@ Cálculo e monitoramento de SLA por prioridade.
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/sla/status/{ticket_id}` | Status de SLA do ticket |
-| *(outros endpoints)* | `/sla/...` | Alertas e listagem de violações |
+| `GET` | `/sla/violations/{ticket_id}` | Violações de SLA de um ticket |
+| `GET` | `/sla/summary/priority/{priority}` | Resumo de conformidade de SLA por prioridade |
 
 **Políticas de SLA por prioridade:**
 
@@ -195,7 +194,7 @@ Service (service.py)
 Repository (repository.py)
     │  queries via SQLAlchemy ORM
     ▼
-Banco de Dados MySQL
+Banco de Dados PostgreSQL
 ```
 
 ---
@@ -225,7 +224,7 @@ pytest tests/ -v
 
 ## 🐳 Docker
 
-O backend possui um `Dockerfile` próprio e é orquestrado via `docker-compose.yml` na raiz do projeto. O serviço expõe a API via Uvicorn e se conecta ao MySQL configurado via variáveis de ambiente.
+O backend possui um `Dockerfile` próprio e é orquestrado via `docker-compose.yml` na raiz do projeto. O serviço expõe a API via Uvicorn e se conecta ao PostgreSQL configurado via variáveis de ambiente.
 
 ### Health Check
 ```
@@ -239,5 +238,7 @@ Retorna `{"status": "ok", "db": "connected"}` se o banco estiver acessível.
 
 - IDs são **UUIDs v4** (`CHAR(36)`) gerados automaticamente no Python.
 - A documentação interativa (`/docs`, `/redoc`) só é exposta quando `APP_DEBUG=true`.
+- ENUMs de status e prioridade são **tipos nativos do PostgreSQL** (`ticketstatus`, `ticketpriority`), criados/removidos explicitamente nas migrations.
+- O campo `updated_at` é atualizado pelo ORM via `onupdate=utc_now` (PostgreSQL não suporta `ON UPDATE CURRENT_TIMESTAMP`).
 - O pool de conexões usa `pool_pre_ping=True` e `pool_recycle=3600` para evitar conexões stale.
 - Deleção de mensagens respeita **CASCADE DELETE** a partir do ticket pai.
