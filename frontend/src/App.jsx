@@ -757,7 +757,7 @@ function DashboardUser({ user, tickets, setPage, setActiveTicket }) {
 }
 
 // ─── TICKETS BOARD (AGENTE) ───────────────────────────────────────────────────
-function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setPage }) {
+function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setPage, onRefresh }) {
   const cols = ["pending", "in_process", "done", "canceled"];
   const colLabel = { pending: "Aberto", in_process: "Em andamento", done: "Resolvido", canceled: "Cancelado" };
   const move = async (id, st) => {
@@ -769,6 +769,7 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
       });
       if (res.ok) {
         setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+        if (onRefresh) onRefresh(); // Sincroniza com o backend após mover ticket
       }
     } catch(e) {
       console.error("Falha ao atualizar status", e);
@@ -1495,7 +1496,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (role) loadTickets();
+    if (!role) return;
+    loadTickets();
+    const interval = setInterval(loadTickets, 15000); // Atualiza a cada 15s
+    return () => clearInterval(interval);
   }, [role]);
 
   const handleCreate = async (form) => {
@@ -1543,7 +1547,7 @@ export default function App() {
         <div style={{ flex: 1, overflowY: ["messages", "knowledge", "churn"].includes(page) ? "hidden" : "auto", background: T.bgApp }}>
           {page === "dashboard" && role === "agent" && <DashboardAgent tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} user={user} />}
           {page === "dashboard" && role === "user"  && <DashboardUser  user={user} tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} />}
-          {page === "tickets"   && role === "agent" && <TicketsBoard tickets={tickets} setTickets={setTickets} activeTicket={activeTicket} setActiveTicket={setActiveTicket} setPage={setPage} />}
+          {page === "tickets"   && role === "agent" && <TicketsBoard tickets={tickets} setTickets={setTickets} activeTicket={activeTicket} setActiveTicket={setActiveTicket} setPage={setPage} onRefresh={loadTickets} />}
           {page === "tickets"   && role === "user"  && <TicketsUser  tickets={tickets} user={user} setActiveTicket={setActiveTicket} setPage={setPage} />}
           {page === "messages"  && <Mensagens  tickets={tickets} setTickets={setTickets} user={user} role={role} activeId={activeTicket} setActiveId={setActiveTicket} />}
           {page === "knowledge" && <KnowledgeBase role={role} tickets={tickets} />}
