@@ -11,6 +11,9 @@ Rotas disponíveis:
   GET  /integration/fiscal/history/{sku}        → histórico de movimentações por SKU
 """
 
+import random
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.modules.integration.client import fiscal_finance_client
@@ -102,23 +105,37 @@ def resumo_financeiro_fiscal():
         detail=resultado.get("erro", "Erro ao obter resumo financeiro"),
     )
 
-
 @router.get(
-    "/fiscal/history/{sku}",
-    summary="Histórico de movimentações por SKU no Fiscal Finance",
-    description="Retorna todas as movimentações de entrada e saída de um produto.",
+    "/fiscal/purchases/{user_id}",
+    summary="Histórico de compras do usuário",
+    description="Retorna um mock de histórico de compras para contexto de cliente na visão do agente."
 )
-def consultar_historico_fiscal(sku: str):
-    resultado = fiscal_finance_client.consultar_historico(sku)
-
-    if resultado.get("sucesso"):
-        return {
-            "status": "encontrado",
-            "sku": sku,
-            "historico": resultado.get("historico"),
-        }
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=resultado.get("erro", f"Histórico do produto '{sku}' não encontrado"),
-    )
+def historico_compras_fiscal(user_id: str):
+    agora = datetime.now()
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "purchases": [
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Assinatura Mensal - Fiscal",
+                "amount": 199.90,
+                "date": (agora - timedelta(days=15)).isoformat(),
+                "status": "pago"
+            },
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Módulo NFe",
+                "amount": 49.90,
+                "date": (agora - timedelta(days=45)).isoformat(),
+                "status": "pago"
+            },
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Consultoria Tributária",
+                "amount": 500.00,
+                "date": (agora - timedelta(days=90)).isoformat(),
+                "status": "pendente"
+            }
+        ]
+    }
