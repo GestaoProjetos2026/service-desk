@@ -142,8 +142,8 @@ const CHURN_DATA = {
 };
 
 const USERS_DB = {
-  agent: { name: "Alex Morgan",  email: "alex@conexus.io",    role: "agent", avatar: "AM" },
-  user:  { name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
+  agent: { id: "11111111-1111-1111-1111-111111111111", name: "Alex Morgan",  email: "alex@conexus.io",    role: "agent", avatar: "AM" },
+  user:  { id: "22222222-2222-2222-2222-222222222222", name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
 };
 
 // ─── PRIMITIVOS UI ────────────────────────────────────────────────────────────
@@ -690,9 +690,19 @@ function DashboardUser({ user, tickets, setPage, setActiveTicket }) {
 function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setPage }) {
   const cols = ["pending", "in_process", "done", "canceled"];
   const colLabel = { pending: "Aberto", in_process: "Em andamento", done: "Resolvido", canceled: "Cancelado" };
-  const move = (id, st) => {
-    // TODO: PATCH /api/v1/tickets/:id { status: st }
-    setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+  const move = async (id, st) => {
+    try {
+      const res = await fetch(`/api/tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: st })
+      });
+      if (res.ok) {
+        setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+      }
+    } catch(e) {
+      console.error("Falha ao atualizar status", e);
+    }
   };
 
   return (
@@ -824,17 +834,63 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
-  const send = () => {
+  useEffect(() => {
+    if (active) {
+      fetch(`/api/messages?ticket_id=${active.id}`)
+        .then(r => r.json())
+        .then(data => {
+           if (data && data.items) {
+             const fetchedMsgs = data.items.map(m => {
+               const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
+               return {
+                 id: m.id,
+                 author: u.name,
+                 role: u.role,
+                 text: m.message,
+                 time: new Date(m.created_at).toLocaleTimeString("pt-BR")
+               };
+             });
+             setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
+           }
+        }).catch(e => console.error(e));
+    }
+  }, [active?.id]);
+
+  const send = async () => {
     if (!input.trim() || !active) return;
-    const msg = { id: Date.now(), author: user.name, role, text: input.trim(), time: "agora" };
-    // TODO: POST /api/v1/tickets/:id/messages { text }
-    setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, msg] } : t));
+    const msgText = input.trim();
     setInput("");
-    if (role === "user") {
-      setTimeout(() => {
-        const auto = { id: Date.now() + 1, author: "Alex Morgan", role: "agent", text: "Recebi sua mensagem! Estou verificando e retorno em breve 👍", time: "agora" };
-        setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, msg, auto] } : t));
-      }, 1600);
+    
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticket_id: active.id,
+          author_id: user.id,
+          message: msgText
+        })
+      });
+      if (res.ok) {
+        // Recarregar mensagens
+        const r = await fetch(`/api/messages?ticket_id=${active.id}`);
+        const data = await r.json();
+        if (data && data.items) {
+          const fetchedMsgs = data.items.map(m => {
+            const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
+            return {
+              id: m.id,
+              author: u.name,
+              role: u.role,
+              text: m.message,
+              time: new Date(m.created_at).toLocaleTimeString("pt-BR")
+            };
+          });
+          setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
+        }
+      }
+    } catch(e) {
+      console.error(e);
     }
   };
 
@@ -1239,24 +1295,65 @@ function Settings({ user, role }) {
 export default function App() {
   const [role, setRole]                 = useState(null);
   const [page, setPage]                 = useState("dashboard");
-  const [tickets, setTickets]           = useState(TICKETS_INIT);
-  const [activeTicket, setActiveTicket] = useState("SD-101");
+  const [tickets, setTickets]           = useState([]);
+  const [activeTicket, setActiveTicket] = useState(null);
   const [showNew, setShowNew]           = useState(false);
 
   const user = role ? USERS_DB[role] : null;
 
-  const handleCreate = (form) => {
-    const t = {
-      id:       `SD-${Math.floor(200 + Math.random() * 800)}`,
-      title:    form.title, desc: form.desc,
-      status:   "pending",  priority: form.priority,
-      cat:      form.cat,   user: user.name,
-      created:  new Date().toLocaleDateString("pt-BR"),
-      msgs:     [],
-    };
-    // TODO: POST /api/v1/tickets { ...t }
-    setTickets(ts => [t, ...ts]);
-    setActiveTicket(t.id);
+  const loadTickets = async () => {
+    try {
+      const res = await fetch('/api/tickets');
+      if (!res.ok) throw new Error("Falha ao buscar tickets");
+      const data = await res.json();
+      const mapped = data.items.map(t => {
+        const u = Object.values(USERS_DB).find(u => u.id === t.user_id) || USERS_DB.user;
+        return {
+          id: t.id,
+          title: t.title,
+          desc: t.description,
+          status: t.status,
+          priority: t.priority,
+          cat: t.category,
+          user: u.name,
+          created: new Date(t.created_at).toLocaleDateString("pt-BR"),
+          msgs: []
+        };
+      });
+      setTickets(mapped);
+    } catch (e) {
+      console.error(e);
+      setTickets(TICKETS_INIT); // Fallback se o backend estiver fora
+    }
+  };
+
+  useEffect(() => {
+    if (role) loadTickets();
+  }, [role]);
+
+  const handleCreate = async (form) => {
+    try {
+      const payload = {
+        title: form.title,
+        description: form.desc,
+        status: "pending",
+        priority: form.priority,
+        category: form.cat,
+        user_id: user.id
+      };
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const novo = await res.json();
+        await loadTickets();
+        setActiveTicket(novo.id);
+      }
+    } catch(e) {
+      console.error(e);
+    }
   };
 
   const PAGE_TITLE = {
