@@ -11,6 +11,9 @@ Rotas disponíveis:
   GET  /integration/fiscal/cashflow             → resumo financeiro do Fiscal Finance
 """
 
+import random
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.modules.integration.client import core_engine_client, fiscal_finance_client
@@ -140,3 +143,38 @@ def resumo_financeiro_fiscal():
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=resultado.get("erro", "Erro ao obter resumo financeiro"),
     )
+
+@router.get(
+    "/fiscal/purchases/{user_id}",
+    summary="Histórico de compras do usuário",
+    description="Retorna um mock de histórico de compras para contexto de cliente na visão do agente."
+)
+def historico_compras_fiscal(user_id: str):
+    agora = datetime.now()
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "purchases": [
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Assinatura Mensal - Fiscal",
+                "amount": 199.90,
+                "date": (agora - timedelta(days=15)).isoformat(),
+                "status": "pago"
+            },
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Módulo NFe",
+                "amount": 49.90,
+                "date": (agora - timedelta(days=45)).isoformat(),
+                "status": "pago"
+            },
+            {
+                "id": f"ORD-{random.randint(1000, 9999)}",
+                "product": "Consultoria Tributária",
+                "amount": 500.00,
+                "date": (agora - timedelta(days=90)).isoformat(),
+                "status": "pendente"
+            }
+        ]
+    }

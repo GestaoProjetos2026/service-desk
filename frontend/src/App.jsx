@@ -831,6 +831,8 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
   const bottomRef = useRef(null);
   const myTickets = role === "user" ? tickets.filter(t => t.user === user.name) : tickets;
   const active = myTickets.find(t => t.id === activeId) || myTickets[0];
+  const [purchases, setPurchases] = useState([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
@@ -853,8 +855,23 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
              setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
            }
         }).catch(e => console.error(e));
+        
+      if (role === "agent" && active.user_id) {
+        setLoadingPurchases(true);
+        fetch(`/api/integration/fiscal/purchases/${active.user_id}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.purchases) {
+              setPurchases(data.purchases);
+            } else {
+              setPurchases([]);
+            }
+          })
+          .catch(e => console.error(e))
+          .finally(() => setLoadingPurchases(false));
+      }
     }
-  }, [active?.id]);
+  }, [active?.id, role]);
 
   const send = async () => {
     if (!input.trim() || !active) return;
@@ -989,6 +1006,44 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted }}>
           Selecione uma conversa
+        </div>
+      )}
+
+      {/* Contexto do Cliente */}
+      {active && role === "agent" && (
+        <div style={{ width: 300, borderLeft: `1px solid ${T.borderSubtle}`, display: "flex", flexDirection: "column", flexShrink: 0, background: T.bgSurface }}>
+          <div style={{ padding: "16px 18px", borderBottom: `1px solid ${T.borderSubtle}`, fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>
+            Contexto do Cliente
+          </div>
+          <div style={{ padding: 18, flex: 1, overflowY: "auto" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ color: T.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>Usuário</div>
+              <div style={{ color: T.textPrimary, fontSize: 14, fontWeight: 500 }}>{active.user}</div>
+              <div style={{ color: T.textMuted, fontSize: 12, marginTop: 4, fontFamily: "monospace" }}>ID: {active.user_id}</div>
+            </div>
+            
+            <div style={{ color: T.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em", marginBottom: 10 }}>Histórico de Compras</div>
+            {loadingPurchases ? (
+              <div style={{ fontSize: 12, color: T.textMuted }}>Carregando histórico...</div>
+            ) : purchases.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMuted }}>Nenhuma compra encontrada.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {purchases.map(p => (
+                  <div key={p.id} style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 8, padding: 12, background: T.bgApp }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: T.textPrimary }}>{p.product}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: T.success }}>R$ {p.amount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: T.textMuted }}>{new Date(p.date).toLocaleDateString("pt-BR")}</span>
+                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: p.status === "pago" ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)", color: p.status === "pago" ? T.success : T.warning, fontWeight: 600, textTransform: "uppercase" }}>{p.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1316,6 +1371,7 @@ export default function App() {
           priority: t.priority,
           cat: t.category,
           user: u.name,
+          user_id: u.id,
           created: new Date(t.created_at).toLocaleDateString("pt-BR"),
           msgs: []
         };
