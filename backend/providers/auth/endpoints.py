@@ -1,9 +1,11 @@
 """
 Endpoint constants for the Core Engine Auth API.
-Base URL: http://api.core-engine.40.82.176.176.nip.io/v1
+Base URL: configured via CORE_ENGINE_URL env var (settings.core_engine_url)
 """
 
-BASE_URL = "http://api.core-engine.40.82.176.176.nip.io/v1"
+from app.config.config import settings
+
+BASE_URL = settings.core_engine_url.rstrip("/") + "/v1"
 
 # ----- Auth -----
 AUTH_LOGIN    = f"{BASE_URL}/auth/login"     # POST  — login with e-mail and password

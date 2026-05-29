@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # PostgreSQL Database Service
   postgres:
@@ -14,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-service_user} -d ${DB_NAME:-service_desk}"]
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-service_user}", "-d", "${DB_NAME:-service_desk}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,10 +25,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-migration
-    environment:
-      DATABASE_URL: postgresql://${DB_USER:-service_user}:${DB_PASSWORD:-service_pass}@postgres:5432/${DB_NAME:-service_desk}
-      APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: ${APP_DEBUG:-false}
+    env_file:
+      - ./backend/.env
     command: python -m alembic upgrade head
     depends_on:
       postgres:
@@ -45,11 +41,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-api
-    environment:
-      DATABASE_URL: postgresql://${DB_USER:-service_user}:${DB_PASSWORD:-service_pass}@postgres:5432/${DB_NAME:-service_desk}
-      APP_NAME: ${APP_NAME:-service-desk}
-      APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: ${APP_DEBUG:-false}
+    env_file:
+      - ./backend/.env
     ports:
       - "8000:8000"
     depends_on:

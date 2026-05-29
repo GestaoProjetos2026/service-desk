@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     # Database
     database_url: str
 
+    # Integração: Core Engine
+    core_engine_url: str
+
+    # Integração: Fiscal Finance
+    fiscal_finance_url: str
+    fisc_api_key: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
