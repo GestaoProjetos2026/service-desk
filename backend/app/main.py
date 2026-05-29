@@ -31,9 +31,10 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://localhost:5173",
             "http://127.0.0.1:5173",
-            "http://localhost",
-            "http://127.0.0.1",
+            "http://app.service-desk.40.82.176.176.nip.io",
+            "https://app.service-desk.40.82.176.176.nip.io"
         ],
+        allow_origin_regex=r"https?://.*\.nip\.io",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
