@@ -78,6 +78,9 @@ API_PREFIX=/api/v1
 CORE_ENGINE_URL=...
 FISCAL_FINANCE_URL=...
 FISC_API_KEY=...
+
+# Timeout para chamadas inter-squads (segundos)
+INTEGRATION_TIMEOUT=5.0
 ```
 
 A URL é fornecida diretamente via `DATABASE_URL`. O `database.py` normaliza automaticamente `postgresql://` para `postgresql+psycopg2://` antes de criar a engine.
@@ -104,7 +107,18 @@ backend/
 │       ├── tickets/           # Módulo de Tickets
 │       ├── ticket_messages/   # Módulo de Mensagens de Tickets
 │       ├── sla/               # Módulo de SLA
-│       └── knowledge_base/    # Módulo de Base de Conhecimento
+│       ├── knowledge_base/    # Módulo de Base de Conhecimento
+│       └── integration/       # Integração inter-squads (Fiscal Finance)
+│
+├── providers/                 # Clientes HTTP para serviços externos
+│   ├── auth/                  # Cliente para o Core Engine & Auth
+│   │   ├── client.py          # AuthClient (login, me, register, refresh, logout)
+│   │   ├── endpoints.py       # URLs dos endpoints do Core Auth
+│   │   └── models.py          # Pydantic models (LoginRequest, TokenResponse, UserProfile…)
+│   └── fiscal/                # Cliente para o Fiscal Finance (Squad 2)
+│       ├── client.py
+│       ├── endpoints.py
+│       └── models.py
 │
 ├── tests/                     # Testes automatizados (pytest + httpx)
 ├── Dockerfile
@@ -174,6 +188,19 @@ Base de conhecimento com artigos de suporte.
 |---|---|---|
 | `GET` | `/knowledge-base` | Lista artigos (paginado) |
 
+### 🔗 integration
+Integração inter-squads com o **Fiscal Finance** (Squad 2). Utiliza `FiscalFinanceClient` (sincronizado via `httpx`) que chama a API Flask na porta 5000. A API Key é configurada via `FISC_API_KEY`.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/integration/health` | Status da integração com Fiscal Finance |
+| `GET` | `/integration/fiscal/products/{sku}` | Dados do produto por SKU |
+| `GET` | `/integration/fiscal/stock/{sku}` | Saldo de estoque por SKU |
+| `GET` | `/integration/fiscal/cashflow` | Resumo financeiro (saldo, entradas, impostos) |
+| `GET` | `/integration/fiscal/history/{sku}` | Histórico de movimentações por SKU |
+
+O módulo `integration/` não segue a estrutura completa em camadas (sem `model.py` nem `repository.py`): contém apenas `client.py` e `routes.py`, pois não persiste dados localmente.
+
 ---
 
 ## 🔄 Fluxo de uma Requisição
@@ -224,7 +251,14 @@ pytest tests/ -v
 
 ## 🐳 Docker
 
-O backend possui um `Dockerfile` próprio e é orquestrado via `docker-compose.yml` na raiz do projeto. O serviço expõe a API via Uvicorn e se conecta ao PostgreSQL configurado via variáveis de ambiente.
+O backend possui um `Dockerfile` próprio e é orquestrado via `docker-compose.yml` na raiz do projeto. O fluxo de inicialização é:
+
+1. `postgres` inicia e aguarda o health check (`pg_isready`).
+2. `migration` executa `python -m alembic upgrade head` (entrypoint sobrescrito no compose) e **encerra com sucesso**.
+3. `api` inicia via `scripts/entrypoint.sh`, que roda as migrations (idempotente) e sobe o Uvicorn.
+4. `frontend` inicia o Nginx independentemente.
+
+> **Atenção:** o serviço `migration` no `docker-compose.yml` usa `entrypoint: ["python", "-m", "alembic", "upgrade", "head"]` para sobrescrever o `ENTRYPOINT` da imagem (`entrypoint.sh`), evitando que o container inicie o Uvicorn e nunca conclua — o que bloquearia o serviço `api` que depende de `condition: service_completed_successfully`.
 
 ### Health Check
 ```

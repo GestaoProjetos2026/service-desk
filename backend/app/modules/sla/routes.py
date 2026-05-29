@@ -75,3 +75,29 @@ def get_priority_sla_summary(
     """
     return controller.get_priority_sla_summary(priority)
 
+
+# ── Automação (RF-005): scan global ───────────────────────────────────────────
+
+
+@router.get("/violations", summary="Varre todos os tickets abertos e retorna alertas")
+def scan_open_violations(
+    controller: SlaController = Depends(get_controller),
+):
+    """
+    Varre todos os tickets ainda não concluídos (`status != done`) e retorna
+    a lista de violações de SLA encontradas. Destinado a jobs/cron de
+    monitoramento e alertas operacionais.
+    """
+    return controller.scan_all_open_violations()
+
+
+@router.get("/dashboard", summary="Compliance global de SLA agregado por prioridade")
+def sla_dashboard(
+    controller: SlaController = Depends(get_controller),
+):
+    """
+    Retorna um snapshot global de compliance de SLA com totais e
+    detalhamento por prioridade. Usado pelo dashboard de operação.
+    """
+    return controller.get_global_dashboard()
+

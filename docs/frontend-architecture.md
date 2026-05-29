@@ -32,7 +32,7 @@ frontend/
     └── App.jsx         # Toda a aplicação (componentes, estado, dados)
 ```
 
-> A aplicação é intencionalmente **single-file** (`App.jsx`): todos os componentes, design tokens, dados mock e lógica de estado estão neste arquivo. Isso facilita o protótipo; a divisão em módulos será feita quando a integração com a API for implementada.
+> A aplicação é intencionalmente **single-file** (`App.jsx`): todos os componentes, design tokens, dados mock e lógica de estado estão neste arquivo. O arquivo importa `createContext` e `useContext` do React (preparado para extração em `AuthContext`). A divisão em módulos (`api/`, `context/`, `hooks/`) está planejada para as próximas sprints conforme descrito em [integration-plan.md](integration-plan.md).
 
 ---
 
@@ -71,15 +71,23 @@ As mesmas primitivas de cor também são expostas como variáveis CSS em `index.
 | `Field` | Wrapper de campo com label e mensagem de erro |
 | `Card` | Container com fundo elevado e borda sutil |
 | `MetricCard` | Card de KPI com label, valor e ícone colorido |
+| `TicketFiscalPanel` | Painel de integração com Fiscal Finance: exibe saldo, entradas e impostos via `GET /api/v1/integration/fiscal/cashflow` com fallback para dados em cache |
+
+### Funções de Integração (Fiscal Finance)
+
+| Função | Descrição |
+|---|---|
+| `buscarHistoricoFiscal(sku)` | Chama `GET /api/v1/integration/fiscal/history/{sku}` — retorna histórico de movimentações por SKU |
+| `buscarResumoFinanceiro()` | Chama `GET /api/v1/integration/fiscal/cashflow` — retorna saldo, entradas e impostos; em caso de falha, retorna dados de fallback offline |
 
 ### Estrutura da Aplicação
 
 | Componente | Descrição |
 |---|---|
-| `Login` | Tela de login com seleção de perfil (`agent` / `user`) |
+| `Login` | Tela de login com formulário de e-mail + senha; inclui atalhos de contas demo para testes; a validação ainda é local (mock) com `// TODO: POST /api/v1/auth/login` |
 | `Sidebar` | Navegação lateral com itens condicionais por papel |
-| `Topbar` | Cabeçalho com título da página e botão "Novo Ticket" |
-| `NovoTicketModal` | Modal de criação de ticket com formulário validado |
+| `Topbar` | Cabeçalho com título da página, campo de busca, sino de notificações e botão "Novo Ticket" |
+| `NovoTicketModal` | Modal de criação de ticket com formulário validado; `// TODO: POST /api/v1/tickets` |
 
 ### Views (Páginas)
 
@@ -109,35 +117,35 @@ App (estado global)
 └── showNew       — visibilidade do modal de criação
 ```
 
-Não há Context API, Redux ou gerenciador externo de estado — a simplicidade é intencional para o estágio atual do protótipo.
+Não há Context API nem Redux ativos — `createContext` e `useContext` já estão importados em `App.jsx`, mas a extração para `AuthContext` ainda não foi realizada. Está planejada para o Sprint 1 da integração (ver [integration-plan.md](integration-plan.md)).
 
 ---
 
 ## 👥 Controle de Acesso por Papel
 
-Dois papéis são suportados, selecionados na tela de login:
+Dois papéis são suportados. O login é feito via formulário de e-mail + senha — a validação ainda ocorre localmente contra `USERS_DB` (mock), mas a tela já está pronta para conectar ao `POST /api/v1/auth/login`:
 
-| Papel | Usuário mock | Acesso exclusivo |
+| Papel | Credenciais demo | Acesso exclusivo |
 |---|---|---|
-| `agent` | Alex Morgan (`AM`) | `ChurnAnalysis`, `TicketsBoard`, `DashboardAgent` |
-| `user` | Diego Ramos (`DR`) | `TicketsUser`, `DashboardUser` |
+| `agent` | `alex@conexus.io` / `123` (Alex Morgan, `AM`) | `ChurnAnalysis`, `TicketsBoard`, `DashboardAgent` |
+| `user` | `diego@empresa.com` / `123` (Diego Ramos, `DR`) | `TicketsUser`, `DashboardUser` |
 
 A navegação lateral (`Sidebar`) exibe itens diferentes conforme o papel (`NAV_AGENT` vs `NAV_USER`). A view renderizada também é condicional por papel na `App`.
 
 ---
 
-## 📊 Dados Mock
+## 📊 Dados Mock e Integrações Reais
 
-Os dados estão definidos diretamente em `App.jsx` e substituirão chamadas à API REST na próxima fase:
+A maioria dos dados ainda usa constantes definidas em `App.jsx`. Os pontos de integração real já implementados e os que ainda aguardam substituição:
 
-| Constante | Conteúdo | API futura |
+| Constante / Função | Conteúdo | Status |
 |---|---|---|
-| `TICKETS_INIT` | 6 tickets de exemplo com mensagens | `GET /api/v1/tickets` |
-| `KB_INIT` | 4 artigos da base de conhecimento | `GET /api/v1/knowledge-base` |
-| `CHURN_DATA` | Dados mensais de churn, risco e motivos | — (analytics) |
-| `USERS_DB` | Usuários mock por papel | `GET /api/v1/auth/me` |
-
-Os pontos de integração estão marcados com comentários `// TODO:` no código.
+| `TICKETS_INIT` | 6 tickets de exemplo com mensagens | Mock — `// TODO: GET /api/v1/tickets` |
+| `KB_INIT` | 4 artigos da base de conhecimento | Mock — `// TODO: GET /api/v1/knowledge-base` |
+| `CHURN_DATA` | Dados mensais de churn, risco e motivos | Mock — sem endpoint analítico previsto |
+| `USERS_DB` | Usuários mock por papel | Mock — `// TODO: GET /api/v1/auth/me` |
+| `buscarResumoFinanceiro()` | Saldo, entradas e impostos | **Integrado** → `GET /api/v1/integration/fiscal/cashflow` (com fallback offline) |
+| `buscarHistoricoFiscal(sku)` | Histórico de movimentações | **Integrado** → `GET /api/v1/integration/fiscal/history/{sku}` |
 
 ---
 

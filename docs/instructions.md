@@ -1,195 +1,244 @@
-# Instruções básicas
+# Instruções de Execução — Service Desk
 
-## 1) Preparar ambiente
+> Esta página cobre **dois caminhos**: rodar a aplicação **sem Docker** (Backend FastAPI + Frontend React rodando direto no host) ou **com Docker Compose** (tudo orquestrado).
+>
+> A stack real é **PostgreSQL 16** + **FastAPI** + **React (Vite)**.
 
-1. Abra terminal no projeto:
-   - `cd .\Service-Desk`
-2. Crie e ative virtualenv (Windows PowerShell):
-   - `python -m venv .venv`
-   - `.venv\Scripts\Activate.ps1`
-3. Instale dependências:
-   - `py -m pip install -U pip`
-   - `py -m pip install -r requirements.txt`
+---
 
-## 2) Configurar banco de dados
+## 🚀 Rodando SEM Docker (modo desenvolvimento)
 
-- Verifique se existe `.env` na raiz. Se não existir, crie copiando `.env.example`:
-  - `copy .env.example .env` (PowerShell)
-  - `cp .env.example .env` (Linux/Mac)
-- No `.env`, preencha as variáveis:
-  - `DB_HOST=localhost`
-  - `DB_PORT=3306`
-  - `DB_NAME=service_desk`
-  - `DB_USER=user`
-  - `DB_PASSWORD=pass`
-- Não é necessário editar `app/config/config.py`, ele lê `.env` automaticamente.
-
-## 3) Rodar Alembic (sincronizar DB)
-
-1. Gerar migration (nova mudança de modelo):
-   - `python -m alembic revision --autogenerate -m "Create tables"`
-2. Aplicar migration:
-   - `python -m alembic upgrade head`
-
-⚠️ Observação: se `python -m alembic` não funcionar, verifique se o ambiente está ativado e se `alembic` está instalado (`pip install alembic`).
-
-## 4) Iniciar aplicação
-
-1. Executar main via uvicorn (preferido):
-     - `python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
-
-2. Executar diretamente via módulo `main.py` (só para teste rápido):
-   - `python -m app.main`
-
-3. Verifique saúde:
-   - `http://127.0.0.1:8000/health`
-
-4. Documentação Swagger (debug):
-   - `http://127.0.0.1:8000/docs`
-
-5. Se não tiver instalado `uvicorn`, instale com:
-   - `pip install uvicorn[standard]` ou
-   - `.venv\Scripts\python.exe -m pip install uvicorn[standard]`
-
-## 5) Dicas rápidas
-
-- Para ver status do banco:
-  - `python -m alembic current`
-- Para desfazer migration:
-  - `python -m alembic downgrade -1`
-- Caso o terminal não reconheça o comando python:
-  - `Troque por "py" somente`
-
-## 6) Rodando com Docker
+Você precisa de **três processos** rodando simultaneamente: PostgreSQL, Backend (FastAPI) e Frontend (Vite). Use **três terminais separados**.
 
 ### Pré-requisitos
 
-- **Docker**: [instale aqui](https://www.docker.com/products/docker-desktop)
-- **Docker Compose**: geralmente vem com Docker Desktop
+- **Python 3.11+** ([download](https://www.python.org/downloads/))
+- **Node.js 18+** e **npm** ([download](https://nodejs.org/))
+- **PostgreSQL 16** rodando localmente (ou em container individual — veja [opção alternativa](#opção-alternativa-postgresql-em-container-isolado))
+
+---
+
+### 1) Banco de dados PostgreSQL
+
+Crie o banco e o usuário (no `psql` ou pgAdmin):
+
+```sql
+CREATE USER user_service_desk WITH PASSWORD 'SenhaService123!';
+CREATE DATABASE infra_banco OWNER user_service_desk;
+GRANT ALL PRIVILEGES ON DATABASE infra_banco TO user_service_desk;
+```
+
+#### Opção alternativa: PostgreSQL em container isolado
+
+Se preferir não instalar o Postgres no host:
+
+```powershell
+docker run -d --name service-desk-postgres `
+  -e POSTGRES_DB=infra_banco `
+  -e POSTGRES_USER=user_service_desk `
+  -e POSTGRES_PASSWORD=SenhaService123! `
+  -p 5432:5432 `
+  postgres:16-alpine
+```
+
+---
+
+### 2) Backend (FastAPI)
+
+**Terminal 1** — na pasta `backend/`:
+
+```powershell
+cd backend
+
+# 2.1 Criar e ativar virtualenv
+python -m venv .venv
+.venv\Scripts\Activate.ps1   # Windows PowerShell
+# source .venv/bin/activate   # Linux/Mac
+
+# 2.2 Instalar dependências
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+**Criar arquivo `backend/.env`** (na pasta `backend/`):
+
+```env
+DATABASE_URL=postgresql://user_service_desk:SenhaService123!@localhost:5432/infra_banco
+APP_ENV=development
+APP_DEBUG=true
+APP_NAME=service-desk
+API_PREFIX=/api/v1
+
+# Integrações externas (preencha conforme seu ambiente)
+CORE_ENGINE_URL=http://api.core-engine.40.82.176.176.nip.io
+FISCAL_FINANCE_URL=http://localhost:5000
+FISC_API_KEY=FISC-PUBLIC-2026-SQUAD4
+INTEGRATION_TIMEOUT=5.0
+```
+
+**Aplicar migrations (Alembic)**:
+
+```powershell
+python -m alembic upgrade head
+```
+
+**Iniciar a API**:
+
+```powershell
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Verifique:
+- Health: <http://127.0.0.1:8000/health> → `{"status":"ok","db":"connected"}`
+- Swagger: <http://127.0.0.1:8000/docs> (disponível porque `APP_DEBUG=true`)
+
+---
+
+### 3) Frontend (React + Vite)
+
+**Terminal 2** — na pasta `frontend/`:
+
+```powershell
+cd frontend
+
+# 3.1 Instalar dependências (primeira vez)
+npm install
+
+# 3.2 Subir o Vite dev server (HMR ativo)
+npm run dev
+```
+
+Acesse: <http://localhost:5173>
+
+> 💡 O backend precisa estar rodando na porta `8000` para que as chamadas do frontend (`/api/v1/integration/fiscal/cashflow` etc.) funcionem. Caso queira mudar a URL da API, crie um arquivo `frontend/.env` com `VITE_API_BASE_URL=http://localhost:8000/api/v1`.
+
+---
+
+### 4) Comandos úteis (sem Docker)
+
+| Tarefa | Comando |
+|---|---|
+| Status do banco (qual revisão Alembic está aplicada) | `python -m alembic current` |
+| Desfazer última migration | `python -m alembic downgrade -1` |
+| Gerar nova migration (autogenerate) | `python -m alembic revision --autogenerate -m "descricao"` |
+| Rodar testes do backend | `pytest tests/ -v` |
+| Build de produção do frontend | `npm run build` (gera `frontend/dist/`) |
+
+### 5) Troubleshooting (sem Docker)
+
+- **`ModuleNotFoundError: app`** → certifique-se de estar dentro de `backend/` ao rodar `uvicorn app.main:app`.
+- **`connection refused` no PostgreSQL** → confirme que o Postgres está rodando (`docker ps` ou `Get-Service postgresql*`) e que `DATABASE_URL` aponta para `localhost:5432`.
+- **`python` não reconhecido** → use `py` no Windows, ou ative a virtualenv.
+- **CORS no navegador** → quando o módulo `auth/` e o middleware CORS forem adicionados (ver [integration-plan.md](integration-plan.md)), o backend liberará `http://localhost:5173`. Até lá, as chamadas a `/api/v1/...` no `App.jsx` funcionam pois o Vite dev server proxia/relaxa por padrão em dev.
+- **Porta 8000 ou 5173 ocupada** → mude com `--port 8001` (uvicorn) ou `npm run dev -- --port 5174` (vite).
+
+---
+
+## 🐳 Rodando COM Docker
+
+### Pré-requisitos
+
+- **Docker Desktop**: [instale aqui](https://www.docker.com/products/docker-desktop)
+- **Docker Compose** (já vem com Docker Desktop)
 
 ### Configuração
 
-1. Copie `.env.example` para `.env` (se não existir):
-   - `copy .env.example .env` (PowerShell)
-   - `cp .env.example .env` (Linux/Mac)
+1. Crie o arquivo `backend/.env` (use o **host do serviço** no lugar de `localhost`):
 
-2. (Opcional) Customize as variáveis em `.env`:
-   - `DB_HOST=mysql` (nome do serviço Docker, não localhost)
-   - `DB_USER`, `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`, etc.
+   ```env
+   DATABASE_URL=postgresql://user_service_desk:SenhaService123!@postgres:5432/infra_banco
+   APP_ENV=development
+   APP_DEBUG=true
+   APP_NAME=service-desk
+   API_PREFIX=/api/v1
+   CORE_ENGINE_URL=http://api.core-engine.40.82.176.176.nip.io
+   FISCAL_FINANCE_URL=http://host.docker.internal:5000
+   FISC_API_KEY=FISC-PUBLIC-2026-SQUAD4
+   INTEGRATION_TIMEOUT=5.0
+   ```
 
-### Executar com Docker Compose
+   > O `docker-compose.yml` já sobrescreve `DATABASE_URL` para apontar ao serviço `postgres`.
 
-1. **Build das imagens** (primeira vez ou após mudança de dependências):
+2. (Opcional) Variáveis na raiz (`.env`) para customizar nome/senha usados pelo Compose: `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
+
+### Executar
+
+1. **Build das imagens** (primeira vez ou após mudar dependências):
    ```powershell
    docker-compose build
    ```
 
-2. **Iniciar todos os serviços** (MySQL → Migration → API):
+2. **Iniciar todos os serviços**:
    ```powershell
    docker-compose up
    ```
-   - MySQL inicia primeiro e aguarda estar saudável
-   - Migration roda automaticamente (Alembic `upgrade head`)
-   - API inicia após migrations completarem
 
-3. **Verificar saúde da API**:
-   ```
-   http://localhost:8000/health
-   ```
-   - Esperado: `{"status":"ok","db":"connected"}`
+   Fluxo orquestrado:
+   - `postgres` sobe e aguarda `pg_isready` (health check)
+   - `migration` roda `python -m alembic upgrade head` e **encerra com sucesso**
+   - `api` inicia (FastAPI + Uvicorn na porta 8000)
+   - `frontend` inicia o Nginx servindo o build de produção (porta 80)
 
-4. **Acessar documentação Swagger**:
-   ```
-   http://localhost:8000/docs
-   ```
+3. **Acessos**:
+   - Frontend: <http://localhost>
+   - API health: <http://localhost:8000/health>
+   - Swagger: <http://localhost:8000/docs>
 
-### Logs e Debugging
-
-- **Ver todos os logs em tempo real**:
-  ```powershell
-  docker-compose logs -f
-  ```
-
-- **Ver logs apenas da migração**:
-  ```powershell
-  docker-compose logs migration
-  ```
-
-- **Ver logs apenas da API**:
-  ```powershell
-  docker-compose logs api
-  ```
-
-- **Ver logs apenas do MySQL**:
-  ```powershell
-  docker-compose logs mysql
-  ```
-
-### Parar os containers
+### Logs
 
 ```powershell
-# Parar (containers permanecem)
-docker-compose stop
+docker-compose logs -f               # todos
+docker-compose logs -f api           # apenas backend
+docker-compose logs -f frontend      # apenas frontend
+docker-compose logs migration        # migrations (execução única)
+docker-compose logs -f postgres      # banco
+```
 
-# Parar e remover containers
-docker-compose down
+### Parar
 
-# Parar, remover containers e volumes (remove dados do banco)
-docker-compose down -v
+```powershell
+docker-compose stop                  # para sem remover
+docker-compose down                  # remove containers (mantém volume do banco)
+docker-compose down -v               # remove TUDO, inclusive dados do PostgreSQL
 ```
 
 ### Operações úteis
 
-- **Rodar uma migração específica**:
-  ```powershell
-  docker-compose run migration python -m alembic upgrade head
-  ```
+- **Gerar nova migration**:
+   ```powershell
+   docker-compose run --rm migration python -m alembic revision --autogenerate -m "descricao"
+   ```
 
-- **Gerar uma nova migração**:
-  ```powershell
-  docker-compose run migration python -m alembic revision --autogenerate -m "Sua descrição"
-  ```
+- **Shell no container da API**:
+   ```powershell
+   docker-compose exec api sh
+   ```
 
-- **Executar comandos no container da API**:
-  ```powershell
-  docker-compose exec api bash
-  ```
+- **Conectar ao Postgres**:
+   ```powershell
+   docker-compose exec postgres psql -U user_service_desk -d infra_banco
+   ```
 
-- **Executar comandos no MySQL**:
-  ```powershell
-  docker-compose exec mysql mysql -u service_user -p service_desk
-  ```
+### Arquitetura do Compose
 
-### Arquitetura
+| Serviço | Porta | Depende de | Função |
+|---|---|---|---|
+| `postgres` | 5432 | — | PostgreSQL 16 com volume persistente `postgres_data` |
+| `migration` | — | `postgres` (healthy) | Roda `alembic upgrade head` e encerra |
+| `api` | 8000 | `migration` (completed) | FastAPI + Uvicorn |
+| `frontend` | 80 | — | Build Vite servido por Nginx |
 
-O `docker-compose.yml` define 3 serviços coordenados:
-
-1. **mysql** (porta 3306)
-   - Aguarda estar saudável antes do próximo serviço
-   - Dados persistidos em volume `mysql_data`
-
-2. **migration** (Alembic)
-   - Depende de: mysql (service_healthy)
-   - Roda `python -m alembic upgrade head`
-   - Encerra após conclusão
-
-3. **api** (porta 8000)
-   - Depende de: migration (service_completed_successfully)
-   - FastAPI com Uvicorn
-   - Restart automático se falhar
+> **Importante:** o serviço `migration` usa `entrypoint: ["python", "-m", "alembic", "upgrade", "head"]` para sobrescrever o `ENTRYPOINT` da imagem (que também subiria o Uvicorn). Sem isso, o container nunca terminaria e o `api` ficaria esperando para sempre.
 
 ### Troubleshooting
 
-- **"service_completed_successfully" error**: Certifique-se de que o container `migration` completou com sucesso. Verifique logs com `docker-compose logs migration`
-
-- **Porta 3306 já em uso**: Mude em `docker-compose.yml` a porta de `3306:3306` para `3307:3306`
-
-- **Conexão recusada no banco**: Aguarde alguns segundos, o healthcheck MySQL pode levar um tempo
-
-- **Remover tudo e começar do zero**:
-  ```powershell
-  docker-compose down -v
-  docker-compose build --no-cache
-  docker-compose up
-  ```
+- **`api` não sobe** — confira `docker-compose logs migration`: precisa ter saído com código 0.
+- **Porta 5432 / 8000 / 80 já em uso** — ajuste o mapeamento em `docker-compose.yml` (ex.: `"5433:5432"`).
+- **Frontend chama API mas falha** — o frontend serve em `:80` e tenta `/api/v1/...`. Para apontar para outra origem, defina `VITE_API_BASE_URL=http://localhost:8000/api/v1` no momento do build do frontend.
+- **Resetar tudo do zero**:
+   ```powershell
+   docker-compose down -v
+   docker-compose build --no-cache
+   docker-compose up
+   ```
 

@@ -4,6 +4,29 @@
 
 ---
 
+## 0. Estado Atual (maio/2026)
+
+Resumo do que já foi implementado no repositório e o que ainda está pendente:
+
+| Componente | Item | Status |
+|---|---|---|
+| **Backend** | `providers/auth/` — `AuthClient`, endpoints, Pydantic models | ✅ Implementado |
+| **Backend** | `providers/fiscal/` — `FiscalFinanceClient`, endpoints, models | ✅ Implementado |
+| **Backend** | `modules/integration/` — rotas e client do Fiscal Finance | ✅ Implementado |
+| **Backend** | `docker-compose.yml` — `entrypoint` do serviço `migration` corrigido | ✅ Corrigido |
+| **Backend** | `modules/auth/` — schema, service, controller, routes, dependencies | ⏳ Pendente |
+| **Backend** | CORS no `main.py` + `frontend_url` nas settings | ⏳ Pendente |
+| **Backend** | `Depends(get_current_user)` nas rotas de tickets, messages, sla | ⏳ Pendente |
+| **Frontend** | Tela de `Login` — formulário e-mail + senha (UI pronta) | ✅ Implementado |
+| **Frontend** | `buscarResumoFinanceiro()` / `buscarHistoricoFiscal()` chamando API real | ✅ Implementado |
+| **Frontend** | `TicketFiscalPanel` integrado ao `GET /api/v1/integration/fiscal/cashflow` | ✅ Implementado |
+| **Frontend** | `createContext` / `useContext` importados em `App.jsx` | ✅ Preparado |
+| **Frontend** | Conexão real do Login ao `POST /api/v1/auth/login` | ⏳ Pendente |
+| **Frontend** | Extração de `api/`, `context/`, `hooks/` de `App.jsx` | ⏳ Pendente |
+| **Frontend** | Substituição de `TICKETS_INIT`, `KB_INIT`, `USERS_DB` por chamadas à API | ⏳ Pendente |
+
+---
+
 ## 1. Visão Geral
 
 ```
@@ -60,7 +83,10 @@ Toda rota protegida do backend usa uma dependência FastAPI `get_current_user` q
 
 ## 3. Mudanças no Backend
 
-### 3.1. Novo módulo: `auth/`
+### 3.1. Novo módulo: `auth/` ⏳
+
+> **Base já pronta:** `backend/providers/auth/` está **completamente implementado** — `AuthClient` (login, me, register, refresh, logout), todos os endpoints do Core Auth mapeados em `endpoints.py` e os Pydantic models (`LoginRequest`, `RegisterRequest`, `RefreshRequest`, `TokenResponse`, `UserProfile`) em `models.py`. O módulo `auth/` abaixo apenas consome esses providers.
+
 Seguindo a estrutura padrão dos demais módulos (controller / service / routes / schema). **Não possui `model.py` nem `repository.py`** — toda persistência fica no Core Auth.
 
 ```
@@ -112,7 +138,7 @@ Cada rota protegida passa a depender de `Depends(get_current_user)`:
 | `sla/*` | todas | Restringe a `role == "agent"` |
 | `knowledge_base` | `GET` | Pública (mantém aberta) |
 
-### 3.4. CORS
+### 3.4. CORS ⏳
 Adicionar middleware no `app/main.py`:
 ```python
 from fastapi.middleware.cors import CORSMiddleware
@@ -150,12 +176,14 @@ Regras:
 - Remover campos `user_id`, `updated_by`, `author_id` dos schemas de **entrada** (`TicketCreate`, `TicketUpdate`, `TicketMessageCreate`); passar a ser preenchidos no controller a partir de `current_user`.
 - Mantê-los nos schemas de **saída**.
 
-### 3.7. Configurações novas
+### 3.7. Configurações novas ⏳
 Adicionar em `backend/app/config/config.py`:
 ```python
 frontend_url: str = "http://localhost:5173"
 auth_cache_ttl_seconds: int = 60   # cache opcional de get_current_user
 ```
+
+> `CORE_ENGINE_URL`, `FISCAL_FINANCE_URL`, `FISC_API_KEY` e `INTEGRATION_TIMEOUT` já estão presentes nas settings.
 
 ---
 
@@ -198,8 +226,8 @@ const { user, isAuthenticated, login, logout } = useAuth();
 const role = user?.roles?.includes("agent") ? "agent" : "user";
 ```
 
-### 4.4. Tela de Login
-Atualizar `Login.jsx` para enviar credenciais reais via `api.auth.login(email, password)` em vez de selecionar perfil mock.
+### 4.4. Tela de Login ⚠️ Parcialmente pronto
+O formulário de e-mail + senha **já existe** em `App.jsx` com `// TODO: POST /api/v1/auth/login`. A UI está pronta; falta apenas conectar ao `api.auth.login(email, password)` real (após criar `api/auth.js` e `AuthContext`).
 
 ### 4.5. Substituição dos dados mock
 | Mock atual | Substituição |
@@ -260,11 +288,19 @@ Backend retornará erros HTTP padronizados; o frontend deve mapear códigos para
 
 ## 8. Ordem de Implementação (Sprints)
 
-### Sprint 1 — Fundação de Auth
-1. Criar módulo `backend/app/modules/auth/` (schema, service, controller, routes, dependencies).
-2. Adicionar CORS e `frontend_url` nas settings.
+### ✅ Sprint 0 — Integração Fiscal Finance (concluído)
+1. ✅ `providers/fiscal/` implementado (`FiscalFinanceClient`, endpoints, models).
+2. ✅ `modules/integration/` com rotas `/integration/health`, `/fiscal/products/{sku}`, `/fiscal/stock/{sku}`, `/fiscal/cashflow`, `/fiscal/history/{sku}`.
+3. ✅ Frontend: `buscarResumoFinanceiro()` e `buscarHistoricoFiscal(sku)` chamando API real com fallback offline.
+4. ✅ Frontend: `TicketFiscalPanel` exibindo dados do Fiscal Finance.
+5. ✅ `docker-compose.yml`: entrypoint do serviço `migration` corrigido — API agora sobe automaticamente.
+
+### Sprint 1 — Fundação de Auth (próximo)
+> `providers/auth/` já implementado — `AuthClient`, endpoints e models estão prontos.
+1. Criar módulo `backend/app/modules/auth/` (schema, service, controller, routes, **dependencies**).
+2. Adicionar CORS e `frontend_url` / `auth_cache_ttl_seconds` nas settings.
 3. Criar `frontend/src/api/client.js` + `auth.js` + `AuthContext`.
-4. Refatorar tela de Login para usar credenciais reais.
+4. Conectar a tela de `Login` (UI já pronta) ao `api.auth.login(email, password)`.
 5. Validar fluxo login → `/auth/me` → logout.
 
 ### Sprint 2 — Proteção das Rotas Existentes
@@ -311,18 +347,38 @@ def authed_client(client):
 
 ## 10. Checklist de Entrega
 
+**Infraestrutura & Integração Fiscal**
+- [x] `providers/auth/` implementado (`AuthClient`, endpoints, models).
+- [x] `providers/fiscal/` implementado (`FiscalFinanceClient`, endpoints, models).
+- [x] Módulo `integration/` com rotas do Fiscal Finance.
+- [x] `docker-compose.yml` — serviço `migration` corrigido (não bloqueia mais o `api`).
+- [x] Frontend — integração Fiscal Finance com fallback offline.
+- [x] Documentação `backend-architecture.md` e `frontend-architecture.md` atualizadas.
+
+**Sprint 1 — Auth**
 - [ ] Módulo `auth` criado no backend com proxy completo para Core Auth.
-- [ ] Dependência `get_current_user` aplicada em todas as rotas protegidas.
-- [ ] CORS configurado.
+- [ ] Dependência `get_current_user` criada em `dependencies.py`.
+- [ ] CORS configurado (`main.py` + `frontend_url` nas settings).
+- [ ] `frontend/src/api/client.js` + `auth.js` + `AuthContext` criados.
+- [ ] Login real funcional contra Core Auth (UI já pronta).
+- [ ] Fluxo login → `/auth/me` → logout validado end-to-end.
+
+**Sprint 2 — Proteção de Rotas**
+- [ ] `Depends(get_current_user)` aplicado em todas as rotas protegidas.
 - [ ] Schemas de entrada limpos (sem `user_id`/`author_id` vindo do cliente).
-- [ ] Toda alteração de schema do banco feita via migration Alembic (`ALTER TABLE`), com `upgrade()` e `downgrade()` implementados.
-- [ ] Frontend extraído em `api/`, `context/`, `hooks/`, `components/`.
-- [ ] Login real funcional contra Core Auth.
-- [ ] Refresh automático implementado.
-- [ ] Mocks `TICKETS_INIT`, `KB_INIT`, `USERS_DB` removidos.
+- [ ] Filtros por papel aplicados (usuário só vê seus tickets).
 - [ ] Testes do backend atualizados com fixture de auth.
+
+**Sprint 3 — Integração das Telas**
+- [ ] Mocks `TICKETS_INIT`, `KB_INIT`, `USERS_DB` removidos.
+- [ ] Frontend extraído em `api/`, `context/`, `hooks/`, `components/`.
+- [ ] Refresh automático implementado.
+
+**Sprint 4 — Refinos**
+- [ ] Loading states e skeletons.
+- [ ] Toast/banner de erro global.
+- [ ] Logging estruturado no backend.
 - [ ] `.env.example` atualizado em backend e frontend.
-- [ ] Documentação `backend-architecture.md` e `frontend-architecture.md` atualizadas.
 
 ---
 

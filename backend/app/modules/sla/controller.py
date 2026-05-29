@@ -30,3 +30,15 @@ class SlaController:
         """Get SLA compliance summary for all tickets with a given priority"""
         return self.service.get_sla_summary_for_priority(priority)
 
+    def scan_all_open_violations(self):
+        """Varre todos os tickets abertos e retorna alertas de SLA"""
+        alerts = self.service.scan_all_open_violations()
+        return {
+            "violations_found": len(alerts),
+            "alerts": alerts,
+        }
+
+    def get_global_dashboard(self):
+        """Snapshot global de compliance de SLA, agregado por prioridade"""
+        return self.service.get_global_dashboard()
+

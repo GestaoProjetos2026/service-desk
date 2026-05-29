@@ -3,6 +3,8 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
+import * as authApi from "./api/auth.js";
+import { ApiError } from "./api/client.js";
 
 // ─── DESIGN TOKENS (ADR Comitê UX/UI) ────────────────────────────────────────
 const T = {
@@ -145,6 +147,76 @@ const USERS_DB = {
   agent: { name: "Alex Morgan",  email: "alex@conexus.io",    role: "agent", avatar: "AM" },
   user:  { name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
 };
+// ─── INTEGRAÇÃO FISCAL (Squad 2) ─────────────────────────────────────────────
+async function buscarHistoricoFiscal(sku) {
+  try {
+    const res = await fetch(`/api/v1/integration/fiscal/history/${sku}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function buscarResumoFinanceiro() {
+  try {
+    const res = await fetch("/api/v1/integration/fiscal/cashflow");
+    if (!res.ok) throw new Error("Squad 2 indisponível");
+    return await res.json();
+  } catch (err) {
+    // FALLBACK: Se a Squad 2 falhar, mostramos dados em cache/mock
+    // Isso prova a resiliência do seu módulo (exigência do slide 3)
+    console.warn("Usando Fallback para Squad 2:", err.message);
+    return {
+      resumo: {
+        saldo: "R$ 45.200,00 (Offline)",
+        entradas: "R$ 12.000,00",
+        impostos: "R$ 2.400,00"
+      }
+    };
+  }
+}
+
+
+
+
+
+
+
+
+
+// ─── PAINEL FISCAL NO TICKET (Squad 2) ───────────────────────────────────────
+function TicketFiscalPanel() {
+  const [fiscalData, setFiscalData]       = useState(null);
+  const [loadingFiscal, setLoadingFiscal] = useState(true);
+
+  useEffect(() => {
+    buscarResumoFinanceiro().then(data => {
+      setFiscalData(data);
+      setLoadingFiscal(false);
+    });
+  }, []);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontWeight: 700, color: T.textPrimary, fontSize: 13 }}>📊 Fiscal Finance</div>
+      {loadingFiscal && <div style={{ color: T.textMuted, fontSize: 12 }}>Carregando...</div>}
+      {fiscalData?.resumo && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+          <div style={{ fontSize: 12, color: T.textMuted }}>Saldo</div>
+          <div style={{ fontSize: 12, color: T.textMuted }}>Entradas</div>
+          <div style={{ fontSize: 12, color: T.textMuted }}>Impostos</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{fiscalData.resumo.saldo}</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{fiscalData.resumo.entradas}</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{fiscalData.resumo.impostos}</div>
+        </div>
+      )}
+      {!fiscalData && !loadingFiscal && (
+        <div style={{ color: T.danger, fontSize: 12 }}>Indisponível</div>
+      )}
+    </div>
+  );
+}
 
 // ─── PRIMITIVOS UI ────────────────────────────────────────────────────────────
 const Badge = ({ status }) => {
@@ -294,20 +366,102 @@ const MetricCard = ({ label, value, icon: IconComp, color }) => (
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function Login({ onLogin }) {
+  const [mode, setMode]       = useState("login"); // "login" | "register"
+  const [name, setName]       = useState("");
   const [email, setEmail]     = useState("");
   const [pass, setPass]       = useState("");
+  const [pass2, setPass2]     = useState("");
   const [err, setErr]         = useState("");
+  const [info, setInfo]       = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = () => {
-    setErr(""); setLoading(true);
-    // TODO: POST /api/v1/auth/login { email, password }
-    setTimeout(() => {
-      if (email === "alex@conexus.io"   && pass === "123") return onLogin("agent");
-      if (email === "diego@empresa.com" && pass === "123") return onLogin("user");
-      setErr("E-mail ou senha inválidos."); setLoading(false);
-    }, 600);
+  // Mapeia roles do Core Engine → perfis internos do Service Desk
+  const inferRole = (profile) => {
+    const roles = (profile && profile.roles) || [];
+    const agentRoles = ["agent", "admin", "support", "tecnico", "técnico"];
+    return roles.some((r) => agentRoles.includes(String(r).toLowerCase())) ? "agent" : "user";
   };
+
+  const switchMode = (next) => {
+    setMode(next); setErr(""); setInfo(""); setPass(""); setPass2("");
+  };
+
+  const doLogin = async (overrideEmail, overridePass) => {
+    const em = overrideEmail ?? email;
+    const pw = overridePass ?? pass;
+    await authApi.login(em, pw);
+    const profile = await authApi.me();
+    return onLogin(inferRole(profile));
+  };
+
+  const handleLogin = async () => {
+    setErr(""); setInfo(""); setLoading(true);
+
+    // 1) Tenta autenticação real contra /api/v1/auth/login
+    try {
+      await doLogin();
+      setLoading(false);
+      return;
+    } catch (e) {
+      // Só faz fallback se for erro de rede (backend offline) — credenciais
+      // inválidas (401) devem mostrar erro normalmente.
+      const isNetworkError = e instanceof ApiError && e.status === 0;
+      if (e instanceof ApiError && !isNetworkError) {
+        setErr(e.status === 401 || e.status === 403
+          ? "E-mail ou senha inválidos."
+          : `Erro ${e.status}: ${e.message}`);
+        setLoading(false);
+        return;
+      }
+      // 2) Fallback demo (mantém UX quando backend indisponível)
+      if (email === "alex@conexus.io"   && pass === "123") { setLoading(false); return onLogin("agent"); }
+      if (email === "diego@empresa.com" && pass === "123") { setLoading(false); return onLogin("user");  }
+      setErr("E-mail ou senha inválidos."); setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setErr(""); setInfo("");
+    // Validações de UX
+    if (!name.trim())          { setErr("Informe seu nome.");                 return; }
+    if (!email.trim())         { setErr("Informe um e-mail válido.");         return; }
+    const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+    if (!strongPassword.test(pass)) {
+      setErr("A senha deve ter mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial (ex: Abc@1234).");
+      return;
+    }
+    if (pass !== pass2)        { setErr("As senhas não coincidem.");          return; }
+
+    setLoading(true);
+    try {
+      // 1) Cria conta via provider (POST /api/v1/auth/register → Core Engine)
+      await authApi.register(name.trim(), email.trim(), pass);
+      // 2) Faz login automático com as credenciais recém-criadas
+      try {
+        await doLogin(email.trim(), pass);
+        // doLogin já chamou onLogin → componente vai desmontar
+        return;
+      } catch {
+        // Cadastro deu certo mas login automático falhou — pede para o usuário entrar manualmente
+        setInfo("Conta criada com sucesso! Faça login para continuar.");
+        switchMode("login");
+        setLoading(false);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 409)      setErr("Já existe uma conta com este e-mail.");
+        else if (e.status === 400) setErr("Senha não atende aos requisitos: mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial.");
+        else if (e.status === 422) setErr("Dados inválidos. Verifique e tente novamente.");
+        else if (e.status === 0)   setErr("Backend indisponível. Tente novamente em instantes.");
+        else                       setErr(`Erro ${e.status}: ${e.message}`);
+      } else {
+        setErr("Falha inesperada ao cadastrar.");
+      }
+      setLoading(false);
+    }
+  };
+
+  const handle = () => (mode === "login" ? handleLogin() : handleRegister());
 
   return (
     <div style={{
@@ -320,11 +474,40 @@ function Login({ onLogin }) {
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <ConexusLogo size={48} />
           <div style={{ marginTop: 14, fontSize: 24, fontWeight: 700, color: T.textPrimary }}>Conexus</div>
-          <div style={{ color: T.textMuted, fontSize: 14, marginTop: 4 }}>Service Desk — Portal de Suporte</div>
+          <div style={{ color: T.textMuted, fontSize: 14, marginTop: 4 }}>
+            {mode === "login" ? "Service Desk — Portal de Suporte" : "Crie sua conta no Conexus"}
+          </div>
         </div>
 
         <Card style={{ padding: 32 }}>
+          {/* Tabs Login / Cadastro */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 18, background: T.bgInput, padding: 4, borderRadius: 10 }}>
+            {[
+              ["login",    "Entrar"],
+              ["register", "Cadastrar-se"],
+            ].map(([key, label]) => {
+              const active = mode === key;
+              return (
+                <button key={key} onClick={() => switchMode(key)} disabled={loading}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: loading ? "not-allowed" : "pointer",
+                    background: active ? T.brand : "transparent",
+                    color: active ? "#fff" : T.textMuted,
+                    fontSize: 13, fontWeight: 600, transition: "background 0.15s, color 0.15s",
+                  }}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {mode === "register" && (
+              <Field label="Nome completo">
+                <Input type="text" placeholder="Como podemos te chamar?"
+                  value={name} onChange={e => { setName(e.target.value); setErr(""); }} />
+              </Field>
+            )}
             <Field label="E-mail">
               <Input type="email" placeholder="seu@email.com"
                 value={email} onChange={e => { setEmail(e.target.value); setErr(""); }} />
@@ -332,33 +515,49 @@ function Login({ onLogin }) {
             <Field label="Senha">
               <Input type="password" placeholder="••••••••"
                 value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
-                onKeyDown={e => e.key === "Enter" && handle()} />
+                onKeyDown={e => e.key === "Enter" && mode === "login" && handle()} />
             </Field>
+            {mode === "register" && (
+              <Field label="Confirmar senha">
+                <Input type="password" placeholder="••••••••"
+                  value={pass2} onChange={e => { setPass2(e.target.value); setErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && handle()} />
+              </Field>
+            )}
+            {info && (
+              <div style={{ background: T.successMuted, border: `1px solid ${T.successBorder}`, borderRadius: 8, padding: "10px 14px", color: T.success, fontSize: 13 }}>
+                {info}
+              </div>
+            )}
             {err && (
               <div style={{ background: T.dangerMuted, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: "10px 14px", color: T.danger, fontSize: 13 }}>
                 {err}
               </div>
             )}
-            <Btn full onClick={handle} style={{ height: 42, fontSize: 14, marginTop: 4 }}>
-              {loading ? "Autenticando..." : "Entrar"}
+            <Btn full onClick={handle} disabled={loading} style={{ height: 42, fontSize: 14, marginTop: 4 }}>
+              {loading
+                ? (mode === "login" ? "Autenticando..." : "Criando conta...")
+                : (mode === "login" ? "Entrar" : "Criar conta")}
             </Btn>
           </div>
 
-          <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: T.textDisabled, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Contas demo</div>
-            {[
-              ["Técnico — Alex Morgan", "alex@conexus.io",    "123"],
-              ["Usuário — Diego Ramos", "diego@empresa.com",  "123"],
-            ].map(([role, em, pw]) => (
-              <div key={em} onClick={() => { setEmail(em); setPass(pw); setErr(""); }}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4 }}
-                onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <span style={{ color: T.textMuted, fontSize: 12 }}>{role}</span>
-                <span style={{ color: T.brand, fontSize: 11, fontFamily: "monospace" }}>{em}</span>
-              </div>
-            ))}
-          </div>
+          {mode === "login" && (
+            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDisabled, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Contas demo</div>
+              {[
+                ["Técnico — Alex Morgan", "alex@conexus.io",    "123"],
+                ["Usuário — Diego Ramos", "diego@empresa.com",  "123"],
+              ].map(([role, em, pw]) => (
+                <div key={em} onClick={() => { setEmail(em); setPass(pw); setErr(""); }}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4 }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <span style={{ color: T.textMuted, fontSize: 12 }}>{role}</span>
+                  <span style={{ color: T.brand, fontSize: 11, fontFamily: "monospace" }}>{em}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -575,7 +774,7 @@ function NovoTicketModal({ onClose, onCreate }) {
 }
 
 // ─── DASHBOARD AGENTE ─────────────────────────────────────────────────────────
-function DashboardAgent({ tickets, setPage, setActiveTicket }) {
+function DashboardAgent({ tickets, setPage, setActiveTicket, user }) {
   const open   = tickets.filter(t => t.status === "pending").length;
   const inprog = tickets.filter(t => t.status === "in_process").length;
   const done   = tickets.filter(t => t.status === "done").length;
@@ -584,7 +783,7 @@ function DashboardAgent({ tickets, setPage, setActiveTicket }) {
   return (
     <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: T.textPrimary }}>Bom dia, Alex 👋</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: T.textPrimary }}>Olá, {user?.name?.split(" ")[0]} 👋</h2>
         <p style={{ color: T.textMuted, fontSize: 13, marginTop: 4 }}>Veja o que está acontecendo no seu service desk hoje.</p>
       </div>
 
@@ -732,18 +931,24 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
                     <div style={{ color: T.textMuted, fontSize: 11, marginTop: 8 }}>{t.user}</div>
                     {t.msgs.length > 0 && <div style={{ color: T.textMuted, fontSize: 11, marginTop: 4 }}>💬 {t.msgs.length}</div>}
                     {activeTicket === t.id && (
-                      <div style={{ marginTop: 12, display: "flex", gap: 4, flexWrap: "wrap", borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 12 }}>
-                        {cols.filter(c => c !== col).map(c => (
-                          <button key={c} onClick={ev => { ev.stopPropagation(); move(t.id, c); }}
-                            style={{ fontSize: 10, padding: "4px 10px", borderRadius: 999, cursor: "pointer", background: STATUS[c].bg, color: STATUS[c].color, border: `1px solid ${STATUS[c].border}`, fontWeight: 600, fontFamily: "inherit" }}>
-                            {STATUS[c].label}
+                      <>
+                        {/* NOVO: dados do Fiscal Finance ao expandir o ticket */}
+                        <div style={{ marginTop: 12, padding: 12, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.borderSubtle}` }}>
+                          <TicketFiscalPanel />
+                        </div>
+                        <div style={{ marginTop: 12, display: "flex", gap: 4, flexWrap: "wrap", borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 12 }}>
+                          {cols.filter(c => c !== col).map(c => (
+                            <button key={c} onClick={ev => { ev.stopPropagation(); move(t.id, c); }}
+                              style={{ fontSize: 10, padding: "4px 10px", borderRadius: 999, cursor: "pointer", background: STATUS[c].bg, color: STATUS[c].color, border: `1px solid ${STATUS[c].border}`, fontWeight: 600, fontFamily: "inherit" }}>
+                              {STATUS[c].label}
+                            </button>
+                          ))}
+                          <button onClick={ev => { ev.stopPropagation(); setPage("messages"); }}
+                            style={{ fontSize: 10, padding: "4px 10px", borderRadius: 999, cursor: "pointer", background: T.brandMuted, color: T.brand, border: "none", fontWeight: 600, fontFamily: "inherit" }}>
+                            💬 Chat
                           </button>
-                        ))}
-                        <button onClick={ev => { ev.stopPropagation(); setPage("messages"); }}
-                          style={{ fontSize: 10, padding: "4px 10px", borderRadius: 999, cursor: "pointer", background: T.brandMuted, color: T.brand, border: "none", fontWeight: 600, fontFamily: "inherit" }}>
-                          💬 Chat
-                        </button>
-                      </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 ))}
@@ -821,6 +1026,18 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
   const bottomRef = useRef(null);
   const myTickets = role === "user" ? tickets.filter(t => t.user === user.name) : tickets;
   const active = myTickets.find(t => t.id === activeId) || myTickets[0];
+  const [fiscalData, setFiscalData]     = useState(null);
+  const [loadingFiscal, setLoadingFiscal] = useState(false);
+
+  useEffect(() => {
+    if (active && role === "agent") {
+      setLoadingFiscal(true);
+      buscarResumoFinanceiro().then(data => {
+        setFiscalData(data);
+        setLoadingFiscal(false);
+      });
+    }
+  }, [active?.id]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
@@ -833,7 +1050,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
     if (role === "user") {
       setTimeout(() => {
         const auto = { id: Date.now() + 1, author: "Alex Morgan", role: "agent", text: "Recebi sua mensagem! Estou verificando e retorno em breve 👍", time: "agora" };
-        setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, msg, auto] } : t));
+        setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, auto] } : t));
       }, 1600);
     }
   };
@@ -881,7 +1098,24 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
             </div>
             <Badge status={active.status} />
           </div>
-
+      {role === "agent" && (
+  <div style={{ padding: 16, background: T.bgCard, borderRadius: 10, border: `1px solid ${T.borderSubtle}` }}>
+    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: T.textPrimary }}>
+      📊 Dados Financeiros (Squad 2 - Fiscal)
+    </div>
+    {loadingFiscal && <p style={{ color: T.textMuted, fontSize: 12 }}>Carregando...</p>}
+    {fiscalData?.resumo && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 12, color: T.textMuted }}>Saldo: <b style={{ color: T.success }}>{fiscalData.resumo.saldo}</b></div>
+        <div style={{ fontSize: 12, color: T.textMuted }}>Entradas: {fiscalData.resumo.entradas}</div>
+        <div style={{ fontSize: 12, color: T.textMuted }}>Impostos: {fiscalData.resumo.impostos}</div>
+      </div>
+    )}
+    {!fiscalData && !loadingFiscal && (
+      <p style={{ color: T.textDisabled, fontSize: 12 }}>Integração fiscal indisponível</p>
+    )}
+  </div>
+)}
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px 10px", display: "flex", flexDirection: "column", gap: 20 }}>
             {active.msgs.length === 0 ? (
               <div style={{ textAlign: "center", color: T.textMuted, marginTop: 60 }}>
@@ -1271,13 +1505,13 @@ export default function App() {
   return (
     <div style={{ display: "flex", height: "100vh", background: T.bgApp, color: T.textPrimary, fontFamily: "'Inter', system-ui, sans-serif", overflow: "hidden" }}>
       <Sidebar role={role} page={page} setPage={setPage} user={user}
-        onLogout={() => { setRole(null); setPage("dashboard"); }} />
+        onLogout={() => { authApi.logout(); setRole(null); setPage("dashboard"); }} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Topbar title={PAGE_TITLE[page]} onNew={showNewBtn ? () => setShowNew(true) : undefined} />
 
         <div style={{ flex: 1, overflowY: ["messages", "knowledge", "churn"].includes(page) ? "hidden" : "auto", background: T.bgApp }}>
-          {page === "dashboard" && role === "agent" && <DashboardAgent tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} />}
+          {page === "dashboard" && role === "agent" && <DashboardAgent tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} user={user} />}
           {page === "dashboard" && role === "user"  && <DashboardUser  user={user} tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} />}
           {page === "tickets"   && role === "agent" && <TicketsBoard tickets={tickets} setTickets={setTickets} activeTicket={activeTicket} setActiveTicket={setActiveTicket} setPage={setPage} />}
           {page === "tickets"   && role === "user"  && <TicketsUser  tickets={tickets} user={user} setActiveTicket={setActiveTicket} setPage={setPage} />}
