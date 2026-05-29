@@ -106,6 +106,27 @@ def resumo_financeiro_fiscal():
     )
 
 @router.get(
+    "/fiscal/history/{sku}",
+    summary="Consulta histórico de movimentações por SKU no Fiscal Finance",
+    description="Retorna o histórico de entradas e saídas de um determinado produto por SKU.",
+)
+def consultar_historico_fiscal(sku: str):
+    resultado = fiscal_finance_client.consultar_historico(sku)
+
+    if resultado.get("sucesso"):
+        return {
+            "status": "encontrado",
+            "sku": sku,
+            "historico": resultado.get("historico"),
+        }
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=resultado.get("erro", f"Histórico do produto '{sku}' não encontrado"),
+    )
+
+
+@router.get(
     "/fiscal/purchases/{user_id}",
     summary="Histórico de compras do usuário",
     description="Retorna um mock de histórico de compras para contexto de cliente na visão do agente."
