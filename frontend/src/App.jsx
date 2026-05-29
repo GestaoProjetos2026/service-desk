@@ -762,7 +762,7 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
   const colLabel = { pending: "Aberto", in_process: "Em andamento", done: "Resolvido", canceled: "Cancelado" };
   const move = async (id, st) => {
     try {
-      const res = await fetch(`/api/tickets/${id}`, {
+      const res = await fetch(`/api/v1/tickets/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: st })
@@ -932,7 +932,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
 
   useEffect(() => {
     if (active) {
-      fetch(`/api/messages?ticket_id=${active.id}`)
+      fetch(`/api/v1/messages?ticket_id=${active.id}`)
         .then(r => r.json())
         .then(data => {
            if (data && data.items) {
@@ -952,7 +952,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
         
       if (role === "agent" && active.user_id) {
         setLoadingPurchases(true);
-        fetch(`/api/integration/fiscal/purchases/${active.user_id}`)
+        fetch(`/api/v1/integration/fiscal/purchases/${active.user_id}`)
           .then(r => r.json())
           .then(data => {
             if (data && data.purchases) {
@@ -973,7 +973,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
     setInput("");
     
     try {
-      const res = await fetch('/api/messages', {
+      const res = await fetch('/api/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -984,7 +984,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
       });
       if (res.ok) {
         // Recarregar mensagens
-        const r = await fetch(`/api/messages?ticket_id=${active.id}`);
+        const r = await fetch(`/api/v1/messages?ticket_id=${active.id}`);
         const data = await r.json();
         if (data && data.items) {
           const fetchedMsgs = data.items.map(m => {
@@ -1469,7 +1469,7 @@ export default function App() {
 
   const loadTickets = async () => {
     try {
-      const res = await fetch('/api/tickets');
+      const res = await fetch('/api/v1/tickets');
       if (!res.ok) throw new Error("Falha ao buscar tickets");
       const data = await res.json();
       const mapped = data.items.map(t => {
@@ -1508,7 +1508,7 @@ export default function App() {
         category: form.cat,
         user_id: user.id
       };
-      const res = await fetch('/api/tickets', {
+      const res = await fetch('/api/v1/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
