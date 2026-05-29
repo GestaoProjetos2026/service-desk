@@ -18,7 +18,6 @@ print(f"[DEBUG] settings: app_name={settings.app_name}, app_debug={settings.app_
 from fastapi.middleware.cors import CORSMiddleware
 
 def create_app() -> FastAPI:
-    print("[DEBUG] create_app() called")
     app = FastAPI(
         title=settings.app_name,
         debug=settings.app_debug,
@@ -29,7 +28,12 @@ def create_app() -> FastAPI:
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # Allow Vite Dev Server
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost",
+            "http://127.0.0.1",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
