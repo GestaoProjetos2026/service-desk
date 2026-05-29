@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 os.environ.setdefault("DB_HOST", "localhost")
-os.environ.setdefault("DB_PORT", "3306")
+os.environ.setdefault("DB_PORT", "5432")
 os.environ.setdefault("DB_NAME", "service_desk_test")
 os.environ.setdefault("DB_USER", "test")
 os.environ.setdefault("DB_PASSWORD", "test")
@@ -27,7 +27,7 @@ def engine():
     db_port = os.getenv("DB_PORT")
     db_name = os.getenv("DB_NAME")
     
-    database_url = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     
     engine = create_engine(database_url)
     Base.metadata.create_all(engine, tables=[Ticket.__table__, TicketMessage.__table__])
