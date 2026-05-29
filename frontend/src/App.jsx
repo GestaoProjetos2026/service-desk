@@ -909,6 +909,24 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
   const active = myTickets.find(t => t.id === activeId) || myTickets[0];
   const [purchases, setPurchases] = useState([]);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [fiscalData, setFiscalData] = useState(null);
+  const [loadingFiscal, setLoadingFiscal] = useState(false);
+
+  useEffect(() => {
+    if (role === "agent") {
+      setLoadingFiscal(true);
+      buscarResumoFinanceiro()
+        .then(data => {
+          setFiscalData(data);
+        })
+        .catch(err => {
+          console.error("Erro ao carregar dados fiscais em mensagens:", err);
+        })
+        .finally(() => {
+          setLoadingFiscal(false);
+        });
+    }
+  }, [role]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
