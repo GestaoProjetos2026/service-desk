@@ -4,9 +4,20 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import all models so Alembic can detect them
-import app.modules.tickets.model  # noqa: F401
-import app.modules.ticket_messages.model  # noqa: F401
-# import app.modules.users.model  # noqa: F401  ← add future modules here
+# Dynamically import all submodules under `app.modules` so new models
+# are automatically registered in `Base.metadata` without manual edits.
+import importlib
+import pkgutil
+import app.modules  # noqa: F401
+
+package = app.modules
+for finder, name, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+    try:
+        importlib.import_module(name)
+    except Exception:
+        # ignore problematic imports to avoid breaking Alembic env;
+        # failing modules can be fixed separately
+        pass
 
 from app.config.config import settings
 from app.config.database import Base

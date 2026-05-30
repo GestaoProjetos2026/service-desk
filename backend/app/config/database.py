@@ -1,13 +1,16 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config.config import settings
 
 
+metadata = MetaData(schema="service_desk")
+
+
 class Base(DeclarativeBase):
-    pass
+    metadata = metadata
 
 
 def _get_sqlalchemy_url(url: str) -> str:
