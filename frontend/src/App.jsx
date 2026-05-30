@@ -622,7 +622,7 @@ const NAV_USER = [
   { key: "messages",  icon: Icon.message, label: "Mensagens" },
   { key: "knowledge", icon: Icon.book,    label: "Base KB"   },
   { key: "settings",  icon: Icon.settings,label: "Config"    },
-};
+];
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 function Sidebar({ role, page, setPage, user, onLogout }) {
