@@ -1,20 +1,18 @@
-version: '3.9'
-
 services:
   # PostgreSQL Database Service
   postgres:
     image: postgres:16-alpine
     container_name: service-desk-postgres
     environment:
-      POSTGRES_DB: ${DB_NAME:-service_desk}
-      POSTGRES_USER: ${DB_USER:-service_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-service_pass}
+      POSTGRES_DB: ${DB_NAME:-infra_banco}
+      POSTGRES_USER: ${DB_USER:-user_service_desk}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SenhaService123!}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-service_user} -d ${DB_NAME:-service_desk}"]
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-user_service_desk}", "-d", "${DB_NAME:-infra_banco}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,15 +25,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-migration
+    env_file:
+      - ./backend/.env
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-service_desk}
-      DB_USER: ${DB_USER:-service_user}
-      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
-      APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: ${APP_DEBUG:-false}
-    command: python -m alembic upgrade head
+      DATABASE_URL: postgresql://${DB_USER:-user_service_desk}:${DB_PASSWORD:-SenhaService123!}@postgres:5432/${DB_NAME:-infra_banco}
+    entrypoint: ["python", "-m", "alembic", "upgrade", "head"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,15 +43,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: service-desk-api
+    env_file:
+      - ./backend/.env
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-service_desk}
-      DB_USER: ${DB_USER:-service_user}
-      DB_PASSWORD: ${DB_PASSWORD:-service_pass}
-      APP_NAME: ${APP_NAME:-service-desk}
-      APP_ENV: ${APP_ENV:-production}
-      APP_DEBUG: ${APP_DEBUG:-false}
+      DATABASE_URL: postgresql://${DB_USER:-user_service_desk}:${DB_PASSWORD:-SenhaService123!}@postgres:5432/${DB_NAME:-infra_banco}
     ports:
       - "8000:8000"
     depends_on:

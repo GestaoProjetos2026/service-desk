@@ -45,20 +45,23 @@
 - Endpoints CRUD de tickets: `GET /tickets`, `GET /tickets/{id}`, `POST /tickets`, `PATCH /tickets/{id}`.
 - Endpoints de mensagens: `GET /messages?ticket_id=`, `POST /messages`, `DELETE /messages/{id}`.
 - Endpoint de Knowledge Base: `GET /knowledge-base` (listagem de tickets resolvidos como base de conhecimento).
-- Banco de dados MySQL com tabelas `tickets` e `ticket_messages` (relação 1:N via FK com CASCADE).
+- Banco de dados **PostgreSQL 16** com tabelas `tickets` e `ticket_messages` (relação 1:N via FK com CASCADE). _Migração de MySQL→PostgreSQL concluída em Sprint 05._
 - Migrações gerenciadas pelo Alembic (migration consolidada `0001_initial_schema`).
 - Documentação FastAPI/Swagger em `/docs`.
-- Pipeline CI (GitHub Actions) com testes automatizados em MySQL 8.0.
-- Pipeline CD com deploy automático na Azure VPS via SSH para staging (branch `develop`) e produção (branch `main`).
-- Ambiente de homologação (Staging) configurado na Azure.
-- Containerização com Docker e Docker Compose.
+- Pipeline CI (GitHub Actions) com testes automatizados em PostgreSQL.
+- Pipeline CD com deploy automático (ArgoCD via pipeline centralizado) acionado por tags `v*`.
+- Ambiente de homologação (Staging) configurado.
+- Containerização com Docker e Docker Compose (serviços: `postgres`, `migration`, `api`, `frontend`).
+- **Frontend SPA** (React + Vite + Recharts) com dashboard, board de tickets, mensagens, Knowledge Base, churn e configurações.
+- **Módulo `integration/`** consumindo o Squad **Fiscal Finance** (produtos, estoque, cashflow, histórico) com fallback para resiliência.
+- **Módulo `auth/`** atuando como fachada para o **Core Engine Auth** (login/register/refresh/logout/me).
+- **Módulo `sla/`** com cálculo automatizado em tempo real, dashboard global e scan de violações em tickets abertos.
 
 ### Excluído desta fase
 
-- UI de atendimento (apenas API).
-- Regras de SLA automatizadas com cálculo em tempo real (definidas, pendentes de implementação).
 - Integração com canais externos (e-mail, chat).
-- Análise de churn e métricas avançadas.
+- Análise de churn baseada em dados reais (atualmente alimentada por mock no frontend).
+- Notificações push/e-mail de violação de SLA (endpoints de scan disponíveis, falta o dispatcher).
 
 ---
 
@@ -70,26 +73,41 @@
 |----------------|-----------------------------|--------------------------|
 | Backend        | Python + FastAPI            | FastAPI 0.135.2          |
 | ORM            | SQLAlchemy                  | 2.0.48                   |
-| Banco de Dados | MySQL                       | 8.0                      |
+| Banco de Dados | **PostgreSQL**              | **16** (driver psycopg2) |
 | Migrações      | Alembic                     | 1.13.3                   |
 | Servidor ASGI  | Uvicorn                     | 0.30.6 (standard)        |
 | Testes         | Pytest + HTTPX              | 8.3.3 / 0.27.2           |
 | Containerização| Docker + Compose            | —                        |
-| CI/CD          | GitHub Actions              | Azure VPS (SSH)          |
+| CI/CD          | GitHub Actions + ArgoCD     | Pipeline centralizado    |
 | Validação      | Pydantic + pydantic-settings| 2.5.2                    |
+| Frontend       | React + Vite + Recharts     | 18.3.1 / 5.4.21 / 2.15.4 |
+| HTTP clients   | httpx (auth/fiscal)         | 0.27.2                   |
 
 ### 4.2 Estrutura de Módulos
 
 - `app/modules/tickets/` — model, schema, repository, service, controller, routes.
 - `app/modules/ticket_messages/` — model, schema, repository, service, controller, routes.
 - `app/modules/knowledge_base/` — schema, repository, service, controller, routes (view agregada).
-- `app/config/` — `config.py` (pydantic-settings), `database.py` (engine/session SQLAlchemy).
-- `alembic/versions/` — `0001_initial_schema.py` (schema consolidado, substitui migrações conflitantes anteriores).
+- `app/modules/sla/` — model, schema, service, controller, routes (políticas + cálculo + dashboard).
+- `app/modules/integration/` — client + routes para o Squad Fiscal Finance.
+- `app/modules/auth/` — fachada sobre Core Engine: schema, service, dependencies, routes.
+- `providers/auth/` — cliente httpx assíncrono do Core Engine (login, me, refresh…).
+- `providers/fiscal/` — cliente para o Fiscal Finance.
+- `app/config/` — `config.py` (pydantic-settings, inclui CORS e timeouts), `database.py` (engine/session SQLAlchemy, normaliza `postgresql://` → `postgresql+psycopg2://`).
+- `alembic/versions/` — `0001_initial_schema.py` (schema consolidado).
+- `frontend/src/api/` — client HTTP central + wrappers de auth.
+- `frontend/src/context/AuthContext.jsx` — estado global de autenticação.
 
 ### 4.3 Fluxo de Requisição
 
 ```
-Cliente HTTP → FastAPI Router → Controller → Service → Repository → MySQL
+Cliente HTTP → FastAPI Router → Controller → Service → Repository → PostgreSQL
+```
+
+Integrações externas (Core Auth / Fiscal Finance):
+
+```
+Cliente HTTP → FastAPI Router → Service → Provider (httpx) → Squad externo
 ```
 
 ---
@@ -154,7 +172,7 @@ Cliente HTTP → FastAPI Router → Controller → Service → Repository → My
 | RF-002  | Mensagens em Ticket  | ✅ Implementado                |
 | RF-003  | Status do Ticket     | ✅ Implementado                |
 | RF-004  | Documentação de API  | ✅ Implementado                |
-| RF-005  | SLA                  | 📋 Definido / Pendente automação |
+| RF-005  | SLA                  | ✅ Implementado (cálculo + scan + dashboard) |
 | RF-006  | Knowledge Base       | ✅ Implementado                |
 | RF-007  | Pipeline CI/CD       | ✅ Implementado                |
 | RF-008  | Healthcheck          | ✅ Implementado                |
@@ -172,7 +190,12 @@ Enum: `pending | in_process | done | canceled`. Status inválido rejeitado com H
 Swagger UI disponível em `/docs` e ReDoc em `/redoc` (modo debug). Coleção Postman disponibilizada.
 
 **RF-005 — SLA**
-Políticas documentadas em `docs/`. Implementação automática de cálculo e alertas pendente para próximo sprint.
+Políticas implementadas em `app/modules/sla/model.py` (low/normal/high/urgent). Endpoints:
+- `GET /sla/status/{ticket_id}` — status atual + prazos + remanescente.
+- `GET /sla/violations/{ticket_id}` — violações de um ticket específico.
+- `GET /sla/violations` — scan global de tickets ainda abertos.
+- `GET /sla/summary/priority/{p}` — compliance por prioridade.
+- `GET /sla/dashboard` — snapshot global agregado por prioridade.
 
 **RF-006 — Knowledge Base**
 `GET /knowledge-base` retorna tickets resolvidos como base de conhecimento, com paginação (skip/limit).
@@ -181,7 +204,8 @@ Políticas documentadas em `docs/`. Implementação automática de cálculo e al
 `ci.yml`: testes automáticos em PR para main/develop. `deploy.yml`: deploy automático para staging (develop) e produção (main) via SSH na Azure.
 
 **RF-008 — Healthcheck**
-`GET /health` verifica conexão com banco MySQL; retorna `{status: ok, db: connected}` ou HTTP 503.
+`GET /health` verifica conexão com PostgreSQL; retorna `{status: ok, db: connected}` ou HTTP 503.
+`GET /api/v1/integration/health` reporta o status agregado das integrações externas (Fiscal Finance).
 
 ---
 

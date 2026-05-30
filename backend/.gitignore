@@ -1,4 +1,4 @@
-﻿.env
+﻿
 .env.production
 .env.staging
 __pycache__/

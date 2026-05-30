@@ -3,6 +3,9 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
+import * as authApi from "./api/auth.js";
+import * as ticketsApi from "./api/tickets.js";
+import { ApiError } from "./api/client.js";
 
 // ─── DESIGN TOKENS (ADR Comitê UX/UI) ────────────────────────────────────────
 const T = {
@@ -368,20 +371,110 @@ const MetricCard = ({ label, value, icon: IconComp, color }) => (
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function Login({ onLogin }) {
+  const [mode, setMode]       = useState("login"); // "login" | "register"
+  const [name, setName]       = useState("");
   const [email, setEmail]     = useState("");
   const [pass, setPass]       = useState("");
+  const [pass2, setPass2]     = useState("");
   const [err, setErr]         = useState("");
+  const [info, setInfo]       = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPass,  setShowPass]  = useState(false);
+  const [showPass2, setShowPass2] = useState(false);
 
-  const handle = () => {
-    setErr(""); setLoading(true);
-    // TODO: POST /api/v1/auth/login { email, password }
-    setTimeout(() => {
-      if (email === "alex@conexus.io"   && pass === "123") return onLogin("agent");
-      if (email === "diego@empresa.com" && pass === "123") return onLogin("user");
-      setErr("E-mail ou senha inválidos."); setLoading(false);
-    }, 600);
+  // Mapeia roles do Core Engine → perfis internos do Service Desk
+  const inferRole = (profile) => {
+    const roles = (profile && profile.roles) || [];
+    const agentRoles = ["agent", "admin", "support", "tecnico", "técnico"];
+    return roles.some((r) => agentRoles.includes(String(r).toLowerCase())) ? "agent" : "user";
   };
+
+  const switchMode = (next) => {
+    setMode(next); setErr(""); setInfo(""); setPass(""); setPass2("");
+  };
+
+  const doLogin = async (overrideEmail, overridePass) => {
+    const em = overrideEmail ?? email;
+    const pw = overridePass ?? pass;
+    await authApi.login(em, pw);
+    const profile = await authApi.me();
+    return onLogin(inferRole(profile), profile);
+  };
+
+  const handleLogin = async () => {
+    setErr(""); setInfo(""); setLoading(true);
+
+    // 1) Tenta autenticação real contra /api/v1/auth/login
+    try {
+      await doLogin();
+      setLoading(false);
+      return;
+    } catch (e) {
+      // Só faz fallback se for erro de rede (backend offline) — credenciais
+      // inválidas (401) devem mostrar erro normalmente.
+      const isNetworkError = e instanceof ApiError && e.status === 0;
+      if (e instanceof ApiError && !isNetworkError) {
+        setErr(e.status === 401 || e.status === 403
+          ? "E-mail ou senha inválidos."
+          : `Erro ${e.status}: ${e.message}`);
+        setLoading(false);
+        return;
+      }
+      // 2) Fallback demo (mantém UX quando backend indisponível)
+      if (email === "alex@conexus.io"   && pass === "123") {
+        setLoading(false);
+        return onLogin("agent", { id: "demo-agent", name: "Alex Morgan", email, roles: ["agent"] });
+      }
+      if (email === "diego@empresa.com" && pass === "123") {
+        setLoading(false);
+        return onLogin("user",  { id: "demo-user",  name: "Diego Ramos", email, roles: ["user"]  });
+      }
+      setErr("E-mail ou senha inválidos."); setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setErr(""); setInfo("");
+    // Validações de UX
+    if (!name.trim())          { setErr("Informe seu nome.");                 return; }
+    if (!email.trim())         { setErr("Informe um e-mail válido.");         return; }
+    const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+    if (!strongPassword.test(pass)) {
+      setErr("A senha deve ter mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial (ex: Abc@1234).");
+      return;
+    }
+    if (pass !== pass2)        { setErr("As senhas não coincidem.");          return; }
+
+    setLoading(true);
+    try {
+      // 1) Cria conta via provider (POST /api/v1/auth/register → Core Engine)
+      await authApi.register(name.trim(), email.trim(), pass);
+      // 2) Faz login automático com as credenciais recém-criadas
+      try {
+        await doLogin(email.trim(), pass);
+        // doLogin já chamou onLogin → componente vai desmontar
+        return;
+      } catch {
+        // Cadastro deu certo mas login automático falhou — pede para o usuário entrar manualmente
+        setInfo("Conta criada com sucesso! Faça login para continuar.");
+        switchMode("login");
+        setLoading(false);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 409)      setErr("Já existe uma conta com este e-mail.");
+        else if (e.status === 400) setErr("Senha não atende aos requisitos: mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial.");
+        else if (e.status === 422) setErr("Dados inválidos. Verifique e tente novamente.");
+        else if (e.status === 0)   setErr("Backend indisponível. Tente novamente em instantes.");
+        else                       setErr(`Erro ${e.status}: ${e.message}`);
+      } else {
+        setErr("Falha inesperada ao cadastrar.");
+      }
+      setLoading(false);
+    }
+  };
+
+  const handle = () => (mode === "login" ? handleLogin() : handleRegister());
 
   return (
     <div style={{
@@ -394,45 +487,120 @@ function Login({ onLogin }) {
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <ConexusLogo size={48} />
           <div style={{ marginTop: 14, fontSize: 24, fontWeight: 700, color: T.textPrimary }}>Conexus</div>
-          <div style={{ color: T.textMuted, fontSize: 14, marginTop: 4 }}>Service Desk — Portal de Suporte</div>
+          <div style={{ color: T.textMuted, fontSize: 14, marginTop: 4 }}>
+            {mode === "login" ? "Service Desk — Portal de Suporte" : "Crie sua conta no Conexus"}
+          </div>
         </div>
 
         <Card style={{ padding: 32 }}>
+          {/* Tabs Login / Cadastro */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 18, background: T.bgInput, padding: 4, borderRadius: 10 }}>
+            {[
+              ["login",    "Entrar"],
+              ["register", "Cadastrar-se"],
+            ].map(([key, label]) => {
+              const active = mode === key;
+              return (
+                <button key={key} onClick={() => switchMode(key)} disabled={loading}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: loading ? "not-allowed" : "pointer",
+                    background: active ? T.brand : "transparent",
+                    color: active ? "#fff" : T.textMuted,
+                    fontSize: 13, fontWeight: 600, transition: "background 0.15s, color 0.15s",
+                  }}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {mode === "register" && (
+              <Field label="Nome completo">
+                <Input type="text" placeholder="Como podemos te chamar?"
+                  value={name} onChange={e => { setName(e.target.value); setErr(""); }} />
+              </Field>
+            )}
             <Field label="E-mail">
               <Input type="email" placeholder="seu@email.com"
                 value={email} onChange={e => { setEmail(e.target.value); setErr(""); }} />
             </Field>
             <Field label="Senha">
-              <Input type="password" placeholder="••••••••"
-                value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
-                onKeyDown={e => e.key === "Enter" && handle()} />
+              <div style={{ position: "relative" }}>
+                <Input type={showPass ? "text" : "password"} placeholder="••••••••"
+                  value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && mode === "login" && handle()}
+                  style={{ paddingRight: 40 }} />
+                <button type="button" onClick={() => setShowPass(v => !v)}
+                  style={{
+                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: T.textMuted, padding: 0, lineHeight: 1,
+                  }}
+                  title={showPass ? "Ocultar senha" : "Mostrar senha"}>
+                  {showPass
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                </button>
+              </div>
             </Field>
+            {mode === "register" && (
+              <Field label="Confirmar senha">
+                <div style={{ position: "relative" }}>
+                  <Input type={showPass2 ? "text" : "password"} placeholder="••••••••"
+                    value={pass2} onChange={e => { setPass2(e.target.value); setErr(""); }}
+                    onKeyDown={e => e.key === "Enter" && handle()}
+                    style={{ paddingRight: 40 }} />
+                  <button type="button" onClick={() => setShowPass2(v => !v)}
+                    style={{
+                      position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                      background: "none", border: "none", cursor: "pointer",
+                      color: T.textMuted, padding: 0, lineHeight: 1,
+                    }}
+                    title={showPass2 ? "Ocultar senha" : "Mostrar senha"}>
+                    {showPass2
+                      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    }
+                  </button>
+                </div>
+              </Field>
+            )}
+            {info && (
+              <div style={{ background: T.successMuted, border: `1px solid ${T.successBorder}`, borderRadius: 8, padding: "10px 14px", color: T.success, fontSize: 13 }}>
+                {info}
+              </div>
+            )}
             {err && (
               <div style={{ background: T.dangerMuted, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: "10px 14px", color: T.danger, fontSize: 13 }}>
                 {err}
               </div>
             )}
-            <Btn full onClick={handle} style={{ height: 42, fontSize: 14, marginTop: 4 }}>
-              {loading ? "Autenticando..." : "Entrar"}
+            <Btn full onClick={handle} disabled={loading} style={{ height: 42, fontSize: 14, marginTop: 4 }}>
+              {loading
+                ? (mode === "login" ? "Autenticando..." : "Criando conta...")
+                : (mode === "login" ? "Entrar" : "Criar conta")}
             </Btn>
           </div>
 
-          <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: T.textDisabled, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Contas demo</div>
-            {[
-              ["Técnico — Alex Morgan", "alex@conexus.io",    "123"],
-              ["Usuário — Diego Ramos", "diego@empresa.com",  "123"],
-            ].map(([role, em, pw]) => (
-              <div key={em} onClick={() => { setEmail(em); setPass(pw); setErr(""); }}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4 }}
-                onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <span style={{ color: T.textMuted, fontSize: 12 }}>{role}</span>
-                <span style={{ color: T.brand, fontSize: 11, fontFamily: "monospace" }}>{em}</span>
-              </div>
-            ))}
-          </div>
+          {mode === "login" && (
+            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDisabled, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Contas demo</div>
+              {[
+                ["Técnico — Alex Morgan", "alex@conexus.io",    "123"],
+                ["Usuário — Diego Ramos", "diego@empresa.com",  "123"],
+              ].map(([role, em, pw]) => (
+                <div key={em} onClick={() => { setEmail(em); setPass(pw); setErr(""); }}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4 }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <span style={{ color: T.textMuted, fontSize: 12 }}>{role}</span>
+                  <span style={{ color: T.brand, fontSize: 11, fontFamily: "monospace" }}>{em}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -1464,6 +1632,7 @@ function Settings({ user, role }) {
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [role, setRole]                 = useState(null);
+  const [user, setUser]                 = useState(null);   // perfil real vindo de /auth/me
   const [page, setPage]                 = useState("dashboard");
   const [tickets, setTickets]           = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
@@ -1534,12 +1703,22 @@ export default function App() {
 
   const showNewBtn = (page === "dashboard" || page === "tickets");
 
-  if (!role) return <Login onLogin={r => { setRole(r); setPage("dashboard"); }} />;
+  if (!role || !user) {
+    return (
+      <Login
+        onLogin={(r, profile) => {
+          setRole(r);
+          setUser(buildUserFromProfile(profile, r));
+          setPage("dashboard");
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", background: T.bgApp, color: T.textPrimary, fontFamily: "'Inter', system-ui, sans-serif", overflow: "hidden" }}>
       <Sidebar role={role} page={page} setPage={setPage} user={user}
-        onLogout={() => { setRole(null); setPage("dashboard"); }} />
+        onLogout={() => { authApi.logout(); setRole(null); setUser(null); setPage("dashboard"); }} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Topbar title={PAGE_TITLE[page]} onNew={showNewBtn ? () => setShowNew(true) : undefined} />

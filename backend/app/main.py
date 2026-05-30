@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -9,6 +10,7 @@ from app.modules.tickets.routes import router as tickets_router
 from app.modules.ticket_messages.routes import router as ticket_messages_router
 from app.modules.sla.routes import router as sla_router
 from app.modules.integration.routes import router as integration_router
+from app.modules.auth.routes import router as auth_router
 
 
 print("[DEBUG] app.main loaded")
@@ -50,6 +52,7 @@ def create_app() -> FastAPI:
 
     prefix = settings.api_prefix  # "/api/v1"
 
+    app.include_router(auth_router, prefix=prefix)
     app.include_router(knowledge_base_router, prefix=prefix)
     app.include_router(tickets_router, prefix=prefix)
     app.include_router(ticket_messages_router, prefix=prefix)

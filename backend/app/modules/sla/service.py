@@ -263,3 +263,46 @@ class SlaService:
             "compliance_percentage": (on_track / total_tickets * 100) if total_tickets > 0 else 0,
         }
 
+    # ─────── Automação (RF-005) ───────
+
+    def scan_all_open_violations(self) -> list[SlaViolationAlert]:
+        """
+        Varre todos os tickets ainda não concluídos e retorna alertas de
+        violações de SLA. Pensado para ser chamado por um job/cron externo
+        ou um endpoint de monitoramento.
+        """
+        open_tickets = self._session.scalars(
+            select(Ticket).where(Ticket.status != TicketStatus.done)
+        ).all()
+
+        alerts: list[SlaViolationAlert] = []
+        for ticket in open_tickets:
+            alerts.extend(self.check_violations(ticket))
+        return alerts
+
+    def get_global_dashboard(self) -> dict:
+        """
+        Retorna um snapshot global de compliance de SLA, agregando por
+        prioridade. Usado para o dashboard de operação.
+        """
+        from app.modules.tickets.model import TicketPriority
+
+        per_priority = [
+            self.get_sla_summary_for_priority(p) for p in TicketPriority
+        ]
+        total = sum(item["total_tickets"] for item in per_priority)
+        on_track = sum(item["on_track"] for item in per_priority)
+        at_risk = sum(item["at_risk"] for item in per_priority)
+        violated = sum(item["violated"] for item in per_priority)
+        paused = sum(item["paused"] for item in per_priority)
+
+        return {
+            "total_tickets": total,
+            "on_track": on_track,
+            "at_risk": at_risk,
+            "violated": violated,
+            "paused": paused,
+            "compliance_percentage": (on_track / total * 100) if total > 0 else 0,
+            "by_priority": per_priority,
+        }
+
