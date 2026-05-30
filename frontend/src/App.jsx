@@ -622,7 +622,7 @@ const NAV_USER = [
   { key: "messages",  icon: Icon.message, label: "Mensagens" },
   { key: "knowledge", icon: Icon.book,    label: "Base KB"   },
   { key: "settings",  icon: Icon.settings,label: "Config"    },
-];
+};
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 function Sidebar({ role, page, setPage, user, onLogout }) {
@@ -1438,6 +1438,7 @@ function KnowledgeBase({ role, tickets }) {
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: T.brandMuted, color: T.brand, fontWeight: 600 }}>{a.cat}</span>
                   <span style={{ color: T.textDisabled, fontSize: 10, fontFamily: "monospace" }}>{a.id}</span>
+                  {a.ticket && <span style={{ color: T.textMuted, fontSize: 10 }}>· Origem: {a.ticket}</span>}
                 </div>
                 <div style={{ color: T.textSecondary, fontSize: 13, fontWeight: 500, lineHeight: 1.4, marginBottom: 6 }}>{a.title}</div>
                 <div style={{ display: "flex", gap: 12 }}>
@@ -1638,8 +1639,18 @@ export default function App() {
   const [activeTicket, setActiveTicket] = useState(null);
   const [showNew, setShowNew]           = useState(false);
 
-  const user = role ? USERS_DB[role] : null;
-
+  // Map auth/profile object -> local user shape used by the app
+  const buildUserFromProfile = (profile, inferredRole) => {
+    if (!profile) return null;
+    return {
+      id: profile.id || (inferredRole === "agent" ? USERS_DB.agent.id : USERS_DB.user.id),
+      name: profile.name || profile.full_name || profile.username || (inferredRole === "agent" ? USERS_DB.agent.name : USERS_DB.user.name),
+      email: profile.email || "",
+      role: inferredRole,
+      avatar: (profile.avatar && String(profile.avatar).slice(0,2).toUpperCase()) || (inferredRole === "agent" ? USERS_DB.agent.avatar : USERS_DB.user.avatar),
+    };
+  };
+  
   const loadTickets = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/v1/tickets`);
@@ -1666,11 +1677,11 @@ export default function App() {
       setTickets(TICKETS_INIT); // Fallback se o backend estiver fora
     }
   };
-
+  
   useEffect(() => {
     if (role) loadTickets();
   }, [role]);
-
+  
   const handleCreate = async (form) => {
     try {
       const payload = {
