@@ -144,29 +144,18 @@ const CHURN_DATA = {
   ],
 };
 
-// ─── USUÁRIO LOGADO ──────────────────────────────────────────────────────────
-// Constrói o objeto de usuário consumido pelas telas (Sidebar, Settings, etc.)
-// a partir do perfil real devolvido por GET /api/v1/auth/me.
-function buildUserFromProfile(profile, role) {
-  const safe = profile || {};
-  const email = safe.email || "";
-  const name  = (safe.name && safe.name.trim()) || (email ? email.split("@")[0] : "Usuário");
-  const initials = name
-    .split(/\s+/).filter(Boolean).slice(0, 2)
-    .map(s => s[0].toUpperCase()).join("") || "U";
-  return {
-    id:     safe.id,
-    name,
-    email,
-    role,
-    avatar: initials,
-    roles:  safe.roles || [],
-  };
-}
+const USERS_DB = {
+  agent: { id: "11111111-1111-1111-1111-111111111111", name: "Alex Morgan",  email: "alex@conexus.io",    role: "agent", avatar: "AM" },
+  user:  { id: "22222222-2222-2222-2222-222222222222", name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
+};
 // ─── INTEGRAÇÃO FISCAL (Squad 2) ─────────────────────────────────────────────
+const API_BASE = window.location.hostname.includes("localhost") || window.location.hostname.includes("127.0.0.1")
+  ? ""
+  : window.location.origin.replace("//app.", "//api.");
+
 async function buscarHistoricoFiscal(sku) {
   try {
-    const res = await fetch(`/api/v1/integration/fiscal/history/${sku}`);
+    const res = await fetch(`${API_BASE}/api/v1/integration/fiscal/history/${sku}`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -176,7 +165,7 @@ async function buscarHistoricoFiscal(sku) {
 
 async function buscarResumoFinanceiro() {
   try {
-    const res = await fetch("/api/v1/integration/fiscal/cashflow");
+    const res = await fetch(`${API_BASE}/api/v1/integration/fiscal/cashflow`);
     if (!res.ok) throw new Error("Squad 2 indisponível");
     return await res.json();
   } catch (err) {
@@ -943,9 +932,19 @@ function DashboardUser({ user, tickets, setPage, setActiveTicket }) {
 function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setPage }) {
   const cols = ["pending", "in_process", "done", "canceled"];
   const colLabel = { pending: "Aberto", in_process: "Em andamento", done: "Resolvido", canceled: "Cancelado" };
-  const move = (id, st) => {
-    // TODO: PATCH /api/v1/tickets/:id { status: st }
-    setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+  const move = async (id, st) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: st })
+      });
+      if (res.ok) {
+        setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+      }
+    } catch(e) {
+      console.error("Falha ao atualizar status", e);
+    }
   };
 
   return (
@@ -1080,32 +1079,101 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
   const bottomRef = useRef(null);
   const myTickets = role === "user" ? tickets.filter(t => t.user === user.name) : tickets;
   const active = myTickets.find(t => t.id === activeId) || myTickets[0];
-  const [fiscalData, setFiscalData]     = useState(null);
+  const [purchases, setPurchases] = useState([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [fiscalData, setFiscalData] = useState(null);
   const [loadingFiscal, setLoadingFiscal] = useState(false);
 
   useEffect(() => {
-    if (active && role === "agent") {
+    if (role === "agent") {
       setLoadingFiscal(true);
-      buscarResumoFinanceiro().then(data => {
-        setFiscalData(data);
-        setLoadingFiscal(false);
-      });
+      buscarResumoFinanceiro()
+        .then(data => {
+          setFiscalData(data);
+        })
+        .catch(err => {
+          console.error("Erro ao carregar dados fiscais em mensagens:", err);
+        })
+        .finally(() => {
+          setLoadingFiscal(false);
+        });
     }
-  }, [active?.id]);
+  }, [role]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
-  const send = () => {
+  useEffect(() => {
+    if (active) {
+      fetch(`${API_BASE}/api/v1/messages?ticket_id=${active.id}`)
+        .then(r => r.json())
+        .then(data => {
+           if (data && data.items) {
+             const fetchedMsgs = data.items.map(m => {
+               const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
+               return {
+                 id: m.id,
+                 author: u.name,
+                 role: u.role,
+                 text: m.message,
+                 time: new Date(m.created_at).toLocaleTimeString("pt-BR")
+               };
+             });
+             setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
+           }
+        }).catch(e => console.error(e));
+        
+      if (role === "agent" && active.user_id) {
+        setLoadingPurchases(true);
+        fetch(`${API_BASE}/api/v1/integration/fiscal/purchases/${active.user_id}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.purchases) {
+              setPurchases(data.purchases);
+            } else {
+              setPurchases([]);
+            }
+          })
+          .catch(e => console.error(e))
+          .finally(() => setLoadingPurchases(false));
+      }
+    }
+  }, [active?.id, role]);
+
+  const send = async () => {
     if (!input.trim() || !active) return;
-    const msg = { id: Date.now(), author: user.name, role, text: input.trim(), time: "agora" };
-    // TODO: POST /api/v1/tickets/:id/messages { text }
-    setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, msg] } : t));
+    const msgText = input.trim();
     setInput("");
-    if (role === "user") {
-      setTimeout(() => {
-        const auto = { id: Date.now() + 1, author: "Alex Morgan", role: "agent", text: "Recebi sua mensagem! Estou verificando e retorno em breve 👍", time: "agora" };
-        setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: [...t.msgs, auto] } : t));
-      }, 1600);
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticket_id: active.id,
+          author_id: user.id,
+          message: msgText
+        })
+      });
+      if (res.ok) {
+        // Recarregar mensagens
+        const r = await fetch(`${API_BASE}/api/v1/messages?ticket_id=${active.id}`);
+        const data = await r.json();
+        if (data && data.items) {
+          const fetchedMsgs = data.items.map(m => {
+            const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
+            return {
+              id: m.id,
+              author: u.name,
+              role: u.role,
+              text: m.message,
+              time: new Date(m.created_at).toLocaleTimeString("pt-BR")
+            };
+          });
+          setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
+        }
+      }
+    } catch(e) {
+      console.error(e);
     }
   };
 
@@ -1221,6 +1289,44 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted }}>
           Selecione uma conversa
+        </div>
+      )}
+
+      {/* Contexto do Cliente */}
+      {active && role === "agent" && (
+        <div style={{ width: 300, borderLeft: `1px solid ${T.borderSubtle}`, display: "flex", flexDirection: "column", flexShrink: 0, background: T.bgSurface }}>
+          <div style={{ padding: "16px 18px", borderBottom: `1px solid ${T.borderSubtle}`, fontWeight: 600, color: T.textPrimary, fontSize: 14 }}>
+            Contexto do Cliente
+          </div>
+          <div style={{ padding: 18, flex: 1, overflowY: "auto" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ color: T.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>Usuário</div>
+              <div style={{ color: T.textPrimary, fontSize: 14, fontWeight: 500 }}>{active.user}</div>
+              <div style={{ color: T.textMuted, fontSize: 12, marginTop: 4, fontFamily: "monospace" }}>ID: {active.user_id}</div>
+            </div>
+            
+            <div style={{ color: T.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em", marginBottom: 10 }}>Histórico de Compras</div>
+            {loadingPurchases ? (
+              <div style={{ fontSize: 12, color: T.textMuted }}>Carregando histórico...</div>
+            ) : purchases.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMuted }}>Nenhuma compra encontrada.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {purchases.map(p => (
+                  <div key={p.id} style={{ border: `1px solid ${T.borderSubtle}`, borderRadius: 8, padding: 12, background: T.bgApp }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: T.textPrimary }}>{p.product}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: T.success }}>R$ {p.amount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: T.textMuted }}>{new Date(p.date).toLocaleDateString("pt-BR")}</span>
+                      <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: p.status === "pago" ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)", color: p.status === "pago" ? T.success : T.warning, fontWeight: 600, textTransform: "uppercase" }}>{p.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1532,50 +1638,61 @@ export default function App() {
   const [activeTicket, setActiveTicket] = useState(null);
   const [showNew, setShowNew]           = useState(false);
 
-  // Carrega tickets do backend assim que houver usuário autenticado.
-  // Em caso de falha (backend offline), cai no conjunto mockado para não
-  // quebrar a demo.
+  const user = role ? USERS_DB[role] : null;
+
+  const loadTickets = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/tickets`);
+      if (!res.ok) throw new Error("Falha ao buscar tickets");
+      const data = await res.json();
+      const mapped = data.items.map(t => {
+        const u = Object.values(USERS_DB).find(u => u.id === t.user_id) || USERS_DB.user;
+        return {
+          id: t.id,
+          title: t.title,
+          desc: t.description,
+          status: t.status,
+          priority: t.priority,
+          cat: t.category,
+          user: u.name,
+          user_id: u.id,
+          created: new Date(t.created_at).toLocaleDateString("pt-BR"),
+          msgs: []
+        };
+      });
+      setTickets(mapped);
+    } catch (e) {
+      console.error(e);
+      setTickets(TICKETS_INIT); // Fallback se o backend estiver fora
+    }
+  };
+
   useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await ticketsApi.listTickets({ limit: 100 });
-        if (cancelled) return;
-        const items = (data && data.items) || [];
-        const ui = items.map(t => ticketsApi.toUi(t, user.name));
-        setTickets(ui);
-        if (ui.length) setActiveTicket(ui[0].id);
-      } catch (err) {
-        if (cancelled) return;
-        console.warn("Falha ao carregar tickets, usando mock:", err.message);
-        setTickets(TICKETS_INIT);
-        setActiveTicket("SD-101");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [user]);
+    if (role) loadTickets();
+  }, [role]);
 
   const handleCreate = async (form) => {
-    // Persiste no backend. Em caso de erro, mantém o fluxo demo local.
     try {
-      const payload = ticketsApi.toApi({ ...form, status: "pending" }, user && user.id);
-      const created = await ticketsApi.createTicket(payload);
-      const t = ticketsApi.toUi(created, user.name);
-      setTickets(ts => [t, ...ts]);
-      setActiveTicket(t.id);
-    } catch (err) {
-      console.warn("Falha ao criar ticket no backend, salvando localmente:", err.message);
-      const t = {
-        id:       `SD-${Math.floor(200 + Math.random() * 800)}`,
-        title:    form.title, desc: form.desc,
-        status:   "pending",  priority: form.priority,
-        cat:      form.cat,   user: user.name,
-        created:  new Date().toLocaleDateString("pt-BR"),
-        msgs:     [],
+      const payload = {
+        title: form.title,
+        description: form.desc,
+        status: "pending",
+        priority: form.priority,
+        category: form.cat,
+        user_id: user.id
       };
-      setTickets(ts => [t, ...ts]);
-      setActiveTicket(t.id);
+      const res = await fetch(`${API_BASE}/api/v1/tickets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const novo = await res.json();
+        await loadTickets();
+        setActiveTicket(novo.id);
+      }
+    } catch(e) {
+      console.error(e);
     }
   };
 

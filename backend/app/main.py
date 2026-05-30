@@ -17,8 +17,9 @@ print("[DEBUG] app.main loaded")
 print(f"[DEBUG] settings: app_name={settings.app_name}, app_debug={settings.app_debug}")
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 def create_app() -> FastAPI:
-    print("[DEBUG] create_app() called")
     app = FastAPI(
         title=settings.app_name,
         debug=settings.app_debug,
@@ -26,10 +27,16 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.app_debug else None,
     )
 
-    # CORS — frontend (Vite dev + nginx em prod) consome /api/v1/*
+    # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://app.service-desk.40.82.176.176.nip.io",
+            "https://app.service-desk.40.82.176.176.nip.io"
+        ],
+        allow_origin_regex=r"https?://.*\.nip\.io",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

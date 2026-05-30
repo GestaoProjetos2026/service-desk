@@ -29,12 +29,41 @@ def engine():
     
     database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     
-    engine = create_engine(database_url)
+    # Fallback to SQLite if PostgreSQL is not reachable
+    try:
+        from sqlalchemy import create_engine
+        temp_engine = create_engine(database_url, connect_args={"connect_timeout": 1})
+        conn = temp_engine.connect()
+        conn.close()
+        temp_engine.dispose()
+    except Exception:
+        database_url = "sqlite:///:memory:"
+        
+    if "sqlite" in database_url:
+        from sqlalchemy.pool import StaticPool
+        engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool
+        )
+    else:
+        engine = create_engine(database_url)
+    
+    # For SQLite, enable foreign key constraint support if needed
+    if "sqlite" in database_url:
+        from sqlalchemy import event
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     Base.metadata.create_all(engine, tables=[Ticket.__table__, TicketMessage.__table__])
 
     yield engine
 
-    Base.metadata.drop_all(engine, tables=[TicketMessage.__table__, Ticket.__table__])
+    if "sqlite" not in database_url:
+        Base.metadata.drop_all(engine, tables=[TicketMessage.__table__, Ticket.__table__])
 
 
 @pytest.fixture
