@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import * as authApi from "./api/auth.js";
 import * as ticketsApi from "./api/tickets.js";
-import { ApiError } from "./api/client.js";
+import { ApiError, getToken, API_BASE } from "./api/client.js";
 
 // ─── DESIGN TOKENS (ADR Comitê UX/UI) ────────────────────────────────────────
 const T = {
@@ -149,9 +149,7 @@ const USERS_DB = {
   user:  { id: "22222222-2222-2222-2222-222222222222", name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
 };
 // ─── INTEGRAÇÃO FISCAL (Squad 2) ─────────────────────────────────────────────
-const API_BASE = window.location.hostname.includes("localhost") || window.location.hostname.includes("127.0.0.1")
-  ? ""
-  : window.location.origin.replace("//app.", "//api.");
+// API_BASE importado de ./api/client.js
 
 async function buscarHistoricoFiscal(sku) {
   try {
@@ -385,7 +383,7 @@ function Login({ onLogin }) {
   // Mapeia roles do Core Engine → perfis internos do Service Desk
   const inferRole = (profile) => {
     const roles = (profile && profile.roles) || [];
-    const agentRoles = ["agent", "admin", "support", "tecnico", "técnico"];
+    const agentRoles = ["agent", "admin", "support", "suporte", "tecnico", "técnico"];
     return roles.some((r) => agentRoles.includes(String(r).toLowerCase())) ? "agent" : "user";
   };
 
@@ -423,11 +421,11 @@ function Login({ onLogin }) {
       // 2) Fallback demo (mantém UX quando backend indisponível)
       if (email === "alex@conexus.io"   && pass === "123") {
         setLoading(false);
-        return onLogin("agent", { id: "demo-agent", name: "Alex Morgan", email, roles: ["agent"] });
+        return onLogin("agent", { id: "11111111-1111-1111-1111-111111111111", name: "Alex Morgan", email, roles: ["agent"] });
       }
       if (email === "diego@empresa.com" && pass === "123") {
         setLoading(false);
-        return onLogin("user",  { id: "demo-user",  name: "Diego Ramos", email, roles: ["user"]  });
+        return onLogin("user",  { id: "22222222-2222-2222-2222-222222222222", name: "Diego Ramos", email, roles: ["user"]  });
       }
       setErr("E-mail ou senha inválidos."); setLoading(false);
     }
@@ -584,23 +582,7 @@ function Login({ onLogin }) {
             </Btn>
           </div>
 
-          {mode === "login" && (
-            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDisabled, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Contas demo</div>
-              {[
-                ["Técnico — Alex Morgan", "alex@conexus.io",    "123"],
-                ["Usuário — Diego Ramos", "diego@empresa.com",  "123"],
-              ].map(([role, em, pw]) => (
-                <div key={em} onClick={() => { setEmail(em); setPass(pw); setErr(""); }}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4 }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <span style={{ color: T.textMuted, fontSize: 12 }}>{role}</span>
-                  <span style={{ color: T.brand, fontSize: 11, fontFamily: "monospace" }}>{em}</span>
-                </div>
-              ))}
-            </div>
-          )}
+
         </Card>
       </div>
     </div>
@@ -613,6 +595,7 @@ const NAV_AGENT = [
   { key: "tickets",   icon: Icon.ticket,  label: "Tickets"   },
   { key: "messages",  icon: Icon.message, label: "Mensagens" },
   { key: "knowledge", icon: Icon.book,    label: "Base KB"   },
+  { key: "sla",       icon: Icon.chart,   label: "SLA"       },
   { key: "churn",     icon: Icon.chart,   label: "Churn"     },
   { key: "settings",  icon: Icon.settings,label: "Config"    },
 ];
@@ -736,18 +719,30 @@ function Topbar({ title, onNew }) {
 
 // ─── MODAL NOVO TICKET ────────────────────────────────────────────────────────
 function NovoTicketModal({ onClose, onCreate }) {
-  const [f, setF]     = useState({ title: "", desc: "", priority: "normal", cat: "" });
-  const [err, setErr] = useState({});
-  const [ok, setOk]   = useState(false);
+  const [f, setF]       = useState({ title: "", desc: "", priority: "normal", cat: "" });
+  const [err, setErr]   = useState({});
+  const [ok, setOk]     = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiErr, setApiErr]   = useState("");
   const set = (k, v) => { setF(p => ({ ...p, [k]: v })); setErr(e => ({ ...e, [k]: "" })); };
 
-  const submit = () => {
+  const submit = async () => {
     const e = {};
-    if (!f.title.trim()) e.title = "Campo obrigatório";
-    if (!f.desc.trim())  e.desc  = "Campo obrigatório";
+    if (!f.title.trim())        e.title = "Campo obrigatório";
+    if (f.title.trim().length < 3) e.title = "Mínimo 3 caracteres";
+    if (!f.desc.trim())         e.desc  = "Campo obrigatório";
+    if (f.desc.trim().length < 10) e.desc = "Mínimo 10 caracteres";
     if (Object.keys(e).length) return setErr(e);
-    // TODO: POST /api/v1/tickets { title, desc, priority, cat }
-    onCreate(f); setOk(true);
+    setLoading(true);
+    setApiErr("");
+    try {
+      await onCreate(f);
+      setOk(true);
+    } catch(ex) {
+      setApiErr(ex?.message || "Erro ao criar chamado. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -796,9 +791,14 @@ function NovoTicketModal({ onClose, onCreate }) {
                 </Select>
               </Field>
             </div>
+            {apiErr && (
+              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "10px 14px", color: "#f87171", fontSize: 13 }}>
+                {apiErr}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-              <Btn onClick={submit}>Enviar chamado</Btn>
+              <Btn variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Btn>
+              <Btn onClick={submit} disabled={loading}>{loading ? "Enviando..." : "Enviar chamado"}</Btn>
             </div>
           </>
         ) : (
@@ -817,6 +817,57 @@ function NovoTicketModal({ onClose, onCreate }) {
 }
 
 // ─── DASHBOARD AGENTE ─────────────────────────────────────────────────────────
+
+// ─── PAINEL FINANCEIRO (Squad 4 RBAC) ────────────────────────────────────────
+// Visível APENAS para usuários com role "suporte" no Core Engine (ADR Squad 4)
+function FinancialDashboard({ user }) {
+  const [cashflow, setCashflow] = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+
+  useEffect(() => {
+    buscarResumoFinanceiro()
+      .then(data => { setCashflow(data?.resumo || data); setLoading(false); })
+      .catch(() => { setError("Erro ao carregar dados financeiros."); setLoading(false); });
+  }, []);
+
+  return (
+    <Card style={{ padding: 22, marginBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <span style={{ fontSize: 18 }}>💰</span>
+        <div style={{ fontWeight: 600, fontSize: 15, color: T.textPrimary }}>Painel Financeiro — Squad 2</div>
+        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.brand, background: T.brandMuted, border: `1px solid ${T.brand}`, borderRadius: 4, padding: "2px 8px" }}>
+          🔒 Restrito · Suporte
+        </span>
+      </div>
+      {loading && <div style={{ color: T.textMuted, fontSize: 13 }}>Carregando dados fiscais...</div>}
+      {error  && <div style={{ color: T.danger,   fontSize: 13 }}>{error}</div>}
+      {cashflow && !loading && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
+          {[
+            { label: "Saldo",     value: cashflow.saldo    || (cashflow.balance    != null ? `R$ ${Number(cashflow.balance).toLocaleString("pt-BR",{minimumFractionDigits:2})}` : "—"), color: T.success },
+            { label: "Entradas",  value: cashflow.entradas || (cashflow.income     != null ? `R$ ${Number(cashflow.income).toLocaleString("pt-BR",{minimumFractionDigits:2})}`   : "—"), color: T.info    },
+            { label: "Impostos",  value: cashflow.impostos || (cashflow.taxes      != null ? `R$ ${Number(cashflow.taxes).toLocaleString("pt-BR",{minimumFractionDigits:2})}`    : "—"), color: T.warning  },
+            { label: "Despesas",  value: cashflow.despesas || (cashflow.expenses   != null ? `R$ ${Number(cashflow.expenses).toLocaleString("pt-BR",{minimumFractionDigits:2})}` : "—"), color: T.danger   },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ background: T.bgElevated, borderRadius: 10, padding: "14px 16px", border: `1px solid ${T.borderSubtle}` }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.textMuted, marginBottom: 8 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── RBAC check: retorna true se o usuário tem role "suporte" no Core Engine ──
+function hasSuporteRole(user) {
+  if (!user) return false;
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  return roles.some(r => String(r).toLowerCase() === "suporte");
+}
+
 function DashboardAgent({ tickets, setPage, setActiveTicket, user }) {
   const open   = tickets.filter(t => t.status === "pending").length;
   const inprog = tickets.filter(t => t.status === "in_process").length;
@@ -836,6 +887,8 @@ function DashboardAgent({ tickets, setPage, setActiveTicket, user }) {
         <MetricCard label="Resolvidos"   value={done}   color={T.info}    icon={() => <span style={{ fontSize: 18 }}>✅</span>} />
         <MetricCard label="Urgentes"     value={urgent} color={T.danger}  icon={() => <span style={{ fontSize: 18 }}>⚠️</span>} />
       </div>
+
+      {hasSuporteRole(user) && <FinancialDashboard user={user} />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
         <Card style={{ padding: 22 }}>
@@ -890,7 +943,8 @@ function DashboardAgent({ tickets, setPage, setActiveTicket, user }) {
 
 // ─── DASHBOARD USUÁRIO ────────────────────────────────────────────────────────
 function DashboardUser({ user, tickets, setPage, setActiveTicket }) {
-  const mine = tickets.filter(t => t.user === user.name);
+  // Filtra por user_id (backend) OU por nome (fallback mock local)
+  const mine = tickets.filter(t => t.user_id === user.id || t.user === user.name);
 
   return (
     <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 24 }}>
@@ -933,17 +987,30 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
   const cols = ["pending", "in_process", "done", "canceled"];
   const colLabel = { pending: "Aberto", in_process: "Em andamento", done: "Resolvido", canceled: "Cancelado" };
   const move = async (id, st) => {
+    // BUG FIX: "id" aqui é sempre o UUID real (campo "id" do ticket mapeado
+    // em loadTickets). Antes podia chegar o shortId, causando 404 no PATCH.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE.test(id)) {
+      console.error("move(): id não é um UUID válido:", id);
+      return;
+    }
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE}/api/v1/tickets/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ status: st })
       });
       if (res.ok) {
         setTickets(ts => ts.map(t => t.id === id ? { ...t, status: st } : t));
+      } else {
+        console.error("Falha ao atualizar status:", res.status);
       }
     } catch(e) {
-      console.error("Falha ao atualizar status", e);
+      console.error("Falha ao atualizar status:", e);
     }
   };
 
@@ -974,7 +1041,7 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
                     }}
                     onClick={() => setActiveTicket(activeTicket === t.id ? null : t.id)}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ color: T.textDisabled, fontSize: 11, fontFamily: "monospace" }}>{t.id}</span>
+                      <span style={{ color: T.textDisabled, fontSize: 11, fontFamily: "monospace" }}>{t.shortId || t.id}</span>
                       <span style={{ fontSize: 11, fontWeight: 600, color: PRIORITY[t.priority]?.color }}>{PRIORITY[t.priority]?.label}</span>
                     </div>
                     <div style={{ color: T.textPrimary, fontSize: 13, fontWeight: 500, lineHeight: 1.4, marginBottom: 8 }}>{t.title}</div>
@@ -985,10 +1052,7 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
                     {t.msgs.length > 0 && <div style={{ color: T.textMuted, fontSize: 11, marginTop: 4 }}>💬 {t.msgs.length}</div>}
                     {activeTicket === t.id && (
                       <>
-                        {/* NOVO: dados do Fiscal Finance ao expandir o ticket */}
-                        <div style={{ marginTop: 12, padding: 12, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.borderSubtle}` }}>
-                          <TicketFiscalPanel />
-                        </div>
+
                         <div style={{ marginTop: 12, display: "flex", gap: 4, flexWrap: "wrap", borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 12 }}>
                           {cols.filter(c => c !== col).map(c => (
                             <button key={c} onClick={ev => { ev.stopPropagation(); move(t.id, c); }}
@@ -1017,7 +1081,8 @@ function TicketsBoard({ tickets, setTickets, activeTicket, setActiveTicket, setP
 // ─── TICKETS LISTA (USUÁRIO) ──────────────────────────────────────────────────
 function TicketsUser({ tickets, user, setActiveTicket, setPage }) {
   const [filtro, setFiltro] = useState("todos");
-  const mine = tickets.filter(t => t.user === user.name);
+  // Filtra por user_id (backend real) OU nome (fallback mock)
+  const mine = tickets.filter(t => t.user_id === user.id || t.user === user.name);
   const list = filtro === "todos" ? mine : mine.filter(t => t.status === filtro);
 
   return (
@@ -1077,8 +1142,22 @@ function TicketsUser({ tickets, user, setActiveTicket, setPage }) {
 function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
   const [input, setInput] = useState("");
   const bottomRef = useRef(null);
-  const myTickets = role === "user" ? tickets.filter(t => t.user === user.name) : tickets;
+  // BUG FIX: filtrar por user_id (UUID do backend) em vez de user.name.
+  // Tickets criados pela API têm user_id preenchido mas o campo "user"
+  // é apenas um nome resolvido localmente — pode não coincidir com user.name
+  // de quem está logado, deixando a lista vazia para o usuário real.
+  const myTickets = role === "user"
+    ? tickets.filter(t => t.user_id === user.id || t.user === user.name)
+    : tickets;
   const active = myTickets.find(t => t.id === activeId) || myTickets[0];
+
+  // BUG FIX: quando a lista de tickets atualiza via polling e ainda não há
+  // nenhum selecionado, seleciona automaticamente o primeiro da lista
+  useEffect(() => {
+    if (!activeId && myTickets.length > 0) {
+      setActiveId(myTickets[0].id);
+    }
+  }, [myTickets.length]);
   const [purchases, setPurchases] = useState([]);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
   const [fiscalData, setFiscalData] = useState(null);
@@ -1102,78 +1181,127 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [active?.msgs?.length]);
 
+  const UUID_RE_MSG = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // Função reutilizável para buscar mensagens do ticket ativo
+  const fetchMessages = (ticketId, token) => {
+    if (!UUID_RE_MSG.test(ticketId)) return;
+    fetch(`${API_BASE}/api/v1/messages?ticket_id=${ticketId}`, {
+      headers: token ? { "Authorization": `Bearer ${token}` } : {}
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.items) {
+          const fetchedMsgs = data.items.map(m => {
+            const u = Object.values(USERS_DB).find(u => u.id === m.author_id);
+            const authorName = u ? u.name : (m.author_id ? `Usuário ${m.author_id.slice(0,8)}` : "Usuário");
+            const authorRole = u ? u.role : "user";
+            return {
+              id: m.id,
+              author: authorName,
+              role: authorRole,
+              text: m.message,
+              time: new Date(m.created_at).toLocaleTimeString("pt-BR")
+            };
+          });
+          setTickets(ts => ts.map(t => t.id === ticketId ? { ...t, msgs: fetchedMsgs } : t));
+        }
+      })
+      .catch(e => console.error("Erro ao buscar mensagens:", e));
+  };
+
   useEffect(() => {
-    if (active) {
-      fetch(`${API_BASE}/api/v1/messages?ticket_id=${active.id}`)
+    if (!active || !UUID_RE_MSG.test(active.id)) return;
+
+    const token = getToken();
+
+    // Busca imediata ao abrir o ticket
+    fetchMessages(active.id, token);
+
+    // Polling a cada 3 segundos para ambos os lados receberem mensagens
+    // sem precisar recarregar a página
+    const interval = setInterval(() => {
+      fetchMessages(active.id, getToken());
+    }, 3000);
+
+    // Busca histórico de compras do cliente (apenas para agente)
+    if (role === "agent" && active.user_id) {
+      setLoadingPurchases(true);
+      const token2 = getToken();
+      fetch(`${API_BASE}/api/v1/integration/fiscal/purchases/${active.user_id}`, {
+        headers: token2 ? { "Authorization": `Bearer ${token2}` } : {}
+      })
         .then(r => r.json())
         .then(data => {
-           if (data && data.items) {
-             const fetchedMsgs = data.items.map(m => {
-               const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
-               return {
-                 id: m.id,
-                 author: u.name,
-                 role: u.role,
-                 text: m.message,
-                 time: new Date(m.created_at).toLocaleTimeString("pt-BR")
-               };
-             });
-             setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
-           }
-        }).catch(e => console.error(e));
-        
-      if (role === "agent" && active.user_id) {
-        setLoadingPurchases(true);
-        fetch(`${API_BASE}/api/v1/integration/fiscal/purchases/${active.user_id}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.purchases) {
-              setPurchases(data.purchases);
-            } else {
-              setPurchases([]);
-            }
-          })
-          .catch(e => console.error(e))
-          .finally(() => setLoadingPurchases(false));
-      }
+          setPurchases(data && data.purchases ? data.purchases : []);
+        })
+        .catch(e => console.error("Erro ao buscar compras:", e))
+        .finally(() => setLoadingPurchases(false));
     }
+
+    // Limpa o intervalo ao trocar de ticket ou desmontar
+    return () => clearInterval(interval);
   }, [active?.id, role]);
 
   const send = async () => {
     if (!input.trim() || !active) return;
+
+    // BUG FIX: garantir que o ticket tem UUID válido antes de enviar.
+    // Se o "active" vier de dados mock (ex: id="SD-101"), a mensagem seria
+    // enviada com ticket_id inválido e nunca apareceria para nenhum dos lados.
+    const UUID_RE_SEND = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE_SEND.test(active.id)) {
+      console.error("send(): ticket sem UUID válido — não é possível enviar mensagem:", active.id);
+      return;
+    }
+
     const msgText = input.trim();
     setInput("");
     
     try {
+      const token = getToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      };
+
       const res = await fetch(`${API_BASE}/api/v1/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           ticket_id: active.id,
+          // BUG FIX: author_id deve ser um UUID válido ou omitido.
+          // user.id pode ser um ID demo ("11111111-...") mas sempre é UUID.
           author_id: user.id,
           message: msgText
         })
       });
+
       if (res.ok) {
-        // Recarregar mensagens
-        const r = await fetch(`${API_BASE}/api/v1/messages?ticket_id=${active.id}`);
+        // Recarregar mensagens após envio bem-sucedido
+        const r = await fetch(`${API_BASE}/api/v1/messages?ticket_id=${active.id}`, { headers });
         const data = await r.json();
         if (data && data.items) {
           const fetchedMsgs = data.items.map(m => {
-            const u = Object.values(USERS_DB).find(u => u.id === m.author_id) || USERS_DB.user;
+            const u = Object.values(USERS_DB).find(u => u.id === m.author_id);
+            const authorName = u ? u.name : (m.author_id ? `Usuário ${m.author_id.slice(0,8)}` : "Usuário");
+            const authorRole = u ? u.role : "user";
             return {
               id: m.id,
-              author: u.name,
-              role: u.role,
+              author: authorName,
+              role: authorRole,
               text: m.message,
               time: new Date(m.created_at).toLocaleTimeString("pt-BR")
             };
           });
           setTickets(ts => ts.map(t => t.id === active.id ? { ...t, msgs: fetchedMsgs } : t));
         }
+      } else {
+        const errBody = await res.json().catch(() => ({}));
+        console.error("Erro ao enviar mensagem:", res.status, errBody);
       }
     } catch(e) {
-      console.error(e);
+      console.error("Falha ao enviar mensagem:", e);
     }
   };
 
@@ -1220,24 +1348,7 @@ function Mensagens({ tickets, setTickets, user, role, activeId, setActiveId }) {
             </div>
             <Badge status={active.status} />
           </div>
-      {role === "agent" && (
-  <div style={{ padding: 16, background: T.bgCard, borderRadius: 10, border: `1px solid ${T.borderSubtle}` }}>
-    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: T.textPrimary }}>
-      📊 Dados Financeiros (Squad 2 - Fiscal)
-    </div>
-    {loadingFiscal && <p style={{ color: T.textMuted, fontSize: 12 }}>Carregando...</p>}
-    {fiscalData?.resumo && (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, color: T.textMuted }}>Saldo: <b style={{ color: T.success }}>{fiscalData.resumo.saldo}</b></div>
-        <div style={{ fontSize: 12, color: T.textMuted }}>Entradas: {fiscalData.resumo.entradas}</div>
-        <div style={{ fontSize: 12, color: T.textMuted }}>Impostos: {fiscalData.resumo.impostos}</div>
-      </div>
-    )}
-    {!fiscalData && !loadingFiscal && (
-      <p style={{ color: T.textDisabled, fontSize: 12 }}>Integração fiscal indisponível</p>
-    )}
-  </div>
-)}
+
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px 10px", display: "flex", flexDirection: "column", gap: 20 }}>
             {active.msgs.length === 0 ? (
               <div style={{ textAlign: "center", color: T.textMuted, marginTop: 60 }}>
@@ -1490,6 +1601,217 @@ function KnowledgeBase({ role, tickets }) {
   );
 }
 
+// ─── PAINEL SLA ──────────────────────────────────────────────────────────────
+const SLA_POLICIES_FE = {
+  urgent: { first_response_hours: 1,  resolution_hours: 4,  label: "Urgente" },
+  high:   { first_response_hours: 4,  resolution_hours: 8,  label: "Alta"    },
+  normal: { first_response_hours: 8,  resolution_hours: 24, label: "Normal"  },
+  low:    { first_response_hours: 24, resolution_hours: 72, label: "Baixa"   },
+};
+
+function calcSlaStatus(ticket) {
+  const policy = SLA_POLICIES_FE[ticket.priority];
+  if (!policy) return null;
+  const now = new Date();
+  const created = new Date(ticket._created_iso || ticket.created);
+  if (isNaN(created.getTime())) return null;
+
+  const msPerHour = 3_600_000;
+  const frDeadline = new Date(created.getTime() + policy.first_response_hours * msPerHour);
+  const resDeadline = new Date(created.getTime() + policy.resolution_hours * msPerHour);
+
+  const hasMsgs = ticket.msgs && ticket.msgs.length > 0;
+  const isResolved = ticket.status === "done" || ticket.status === "canceled";
+
+  // First response
+  let frStatus;
+  let frRemaining = null;
+  if (hasMsgs) {
+    frStatus = "met";
+  } else if (now > frDeadline) {
+    frStatus = "violated";
+  } else {
+    const rem = (frDeadline - now) / msPerHour;
+    frStatus = rem <= 1 ? "at_risk" : "on_track";
+    frRemaining = rem;
+  }
+
+  // Resolution
+  let resStatus;
+  let resRemaining = null;
+  if (isResolved) {
+    resStatus = "met";
+  } else if (now > resDeadline) {
+    resStatus = "violated";
+  } else {
+    const rem = (resDeadline - now) / msPerHour;
+    resStatus = rem <= 1 ? "at_risk" : "on_track";
+    resRemaining = rem;
+  }
+
+  let overall;
+  if (frStatus === "violated" || resStatus === "violated") overall = "violated";
+  else if (frStatus === "at_risk" || resStatus === "at_risk") overall = "at_risk";
+  else if (frStatus === "met" && resStatus === "met") overall = "met";
+  else overall = "on_track";
+
+  return { frStatus, frRemaining, resStatus, resRemaining, overall, frDeadline, resDeadline, policy };
+}
+
+const SLA_COLORS = {
+  on_track: T.success, met: T.info, at_risk: T.warning, violated: T.danger,
+};
+const SLA_LABELS = {
+  on_track: "No prazo", met: "Cumprido", at_risk: "Em risco", violated: "Violado",
+};
+
+function SlaStatusBadge({ status }) {
+  const color = SLA_COLORS[status] || T.textMuted;
+  const label = SLA_LABELS[status] || status;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", height: 22,
+      padding: "0 9px", borderRadius: 999,
+      fontSize: 11, fontWeight: 600,
+      color, background: `${color}1a`, border: `1px solid ${color}44`,
+    }}>{label}</span>
+  );
+}
+
+function SlaPanel({ tickets }) {
+  const [tab, setTab] = useState("tickets");
+
+  const withSla = tickets.map(t => ({ ...t, sla: calcSlaStatus(t) })).filter(t => t.sla);
+
+  const violated  = withSla.filter(t => t.sla.overall === "violated").length;
+  const atRisk    = withSla.filter(t => t.sla.overall === "at_risk").length;
+  const onTrack   = withSla.filter(t => t.sla.overall === "on_track").length;
+  const met       = withSla.filter(t => t.sla.overall === "met").length;
+  const total     = withSla.length;
+  const compliant = total > 0 ? Math.round(((onTrack + met) / total) * 100) : 0;
+
+  // By priority summary
+  const byPriority = Object.entries(SLA_POLICIES_FE).map(([prio, pol]) => {
+    const group = withSla.filter(t => t.priority === prio);
+    const ok = group.filter(t => t.sla.overall === "on_track" || t.sla.overall === "met").length;
+    return { prio, label: pol.label, total: group.length, ok, violated: group.filter(t => t.sla.overall === "violated").length, atRisk: group.filter(t => t.sla.overall === "at_risk").length };
+  }).filter(g => g.total > 0);
+
+  const fmtHours = (h) => {
+    if (h == null) return "—";
+    if (h < 1) return `${Math.round(h * 60)}min`;
+    return `${h.toFixed(1)}h`;
+  };
+
+  return (
+    <div style={{ padding: 28, overflowY: "auto", height: "100%" }}>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontWeight: 700, fontSize: 20, color: T.textPrimary }}>Painel de SLA</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginTop: 4 }}>Acompanhe os acordos de nível de serviço por prioridade.</p>
+      </div>
+
+      {/* Métricas */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
+        <MetricCard label="Compliance"   value={`${compliant}%`} color={compliant >= 80 ? T.success : T.warning} icon={() => <span style={{ fontSize: 18 }}>📊</span>} />
+        <MetricCard label="No prazo"     value={onTrack + met}   color={T.success} icon={() => <span style={{ fontSize: 18 }}>✅</span>} />
+        <MetricCard label="Em risco"     value={atRisk}          color={T.warning} icon={() => <span style={{ fontSize: 18 }}>⚠️</span>} />
+        <MetricCard label="Violados"     value={violated}        color={T.danger}  icon={() => <span style={{ fontSize: 18 }}>🔴</span>} />
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+        {[["tickets", "Tickets"], ["prioridade", "Por Prioridade"], ["politicas", "Políticas"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: "pointer", border: "none", transition: "all 0.15s",
+            background: tab === k ? T.brand : T.bgSurface,
+            color: tab === k ? "#fff" : T.textMuted, fontFamily: "inherit",
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {tab === "tickets" && (
+        <Card style={{ overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.borderSubtle}`, display: "grid", gridTemplateColumns: "1fr 80px 100px 120px 120px 100px", gap: 8, color: T.textMuted, fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            {["Ticket", "Prioridade", "Status SLA", "1ª Resposta", "Resolução", "Restante"].map(h => <span key={h}>{h}</span>)}
+          </div>
+          {withSla.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: T.textMuted }}>Nenhum ticket com dados de SLA.</div>
+          ) : withSla.sort((a, b) => {
+            const order = { violated: 0, at_risk: 1, on_track: 2, met: 3 };
+            return (order[a.sla.overall] ?? 4) - (order[b.sla.overall] ?? 4);
+          }).map(t => (
+            <div key={t.id} style={{ padding: "13px 20px", borderBottom: `1px solid ${T.borderSubtle}`, display: "grid", gridTemplateColumns: "1fr 80px 100px 120px 120px 100px", gap: 8, alignItems: "center", transition: "background 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(151,157,172,0.04)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <div>
+                <div style={{ color: T.textPrimary, fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{t.title}</div>
+                <div style={{ color: T.textMuted, fontSize: 11, fontFamily: "monospace" }}>{t.id}</div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: PRIORITY[t.priority]?.color }}>{PRIORITY[t.priority]?.label}</span>
+              <SlaStatusBadge status={t.sla.overall} />
+              <SlaStatusBadge status={t.sla.frStatus} />
+              <SlaStatusBadge status={t.sla.resStatus} />
+              <span style={{ fontSize: 12, color: t.sla.resRemaining != null ? (t.sla.resRemaining <= 1 ? T.danger : T.textMuted) : T.textMuted }}>
+                {t.sla.resRemaining != null ? fmtHours(t.sla.resRemaining) : (t.sla.resStatus === "met" ? "Resolvido" : "Vencido")}
+              </span>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === "prioridade" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {byPriority.map(g => {
+            const pct = g.total > 0 ? Math.round((g.ok / g.total) * 100) : 0;
+            return (
+              <Card key={g.prio} style={{ padding: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: PRIORITY[g.prio]?.color }}>{g.label}</span>
+                    <span style={{ fontSize: 11, color: T.textMuted }}>{g.total} tickets</span>
+                  </div>
+                  <span style={{ fontWeight: 700, fontSize: 16, color: pct >= 80 ? T.success : pct >= 50 ? T.warning : T.danger }}>{pct}%</span>
+                </div>
+                <div style={{ height: 8, background: T.borderSubtle, borderRadius: 4, overflow: "hidden", marginBottom: 14 }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: pct >= 80 ? T.success : pct >= 50 ? T.warning : T.danger, borderRadius: 4, transition: "width 0.4s" }} />
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <span style={{ fontSize: 12, color: T.success }}>✅ No prazo: {g.ok}</span>
+                  <span style={{ fontSize: 12, color: T.warning }}>⚠️ Risco: {g.atRisk}</span>
+                  <span style={{ fontSize: 12, color: T.danger }}>🔴 Violado: {g.violated}</span>
+                </div>
+              </Card>
+            );
+          })}
+          {byPriority.length === 0 && <div style={{ textAlign: "center", padding: 40, color: T.textMuted }}>Nenhum dado disponível.</div>}
+        </div>
+      )}
+
+      {tab === "politicas" && (
+        <Card style={{ overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.borderSubtle}`, display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 8, color: T.textMuted, fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            {["Prioridade", "1ª Resposta", "Resolução"].map(h => <span key={h}>{h}</span>)}
+          </div>
+          {Object.entries(SLA_POLICIES_FE).map(([prio, pol]) => (
+            <div key={prio} style={{ padding: "16px 20px", borderBottom: `1px solid ${T.borderSubtle}`, display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: PRIORITY[prio]?.color }}>{pol.label}</span>
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.textPrimary }}>{pol.first_response_hours}h</span>
+                <span style={{ fontSize: 12, color: T.textMuted, marginLeft: 6 }}>após abertura</span>
+              </div>
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.textPrimary }}>{pol.resolution_hours}h</span>
+                <span style={{ fontSize: 12, color: T.textMuted, marginLeft: 6 }}>após abertura</span>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── ANÁLISE DE CHURN ─────────────────────────────────────────────────────────
 function ChurnAnalysis({ tickets }) {
   const [tab, setTab] = useState("visao");
@@ -1617,9 +1939,18 @@ function Settings({ user, role }) {
             <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 999, marginTop: 8, display: "inline-block", background: role === "agent" ? "rgba(109,40,217,0.15)" : T.brandMuted, color: role === "agent" ? "#a78bfa" : T.brand, fontWeight: 600 }}>
               {role === "agent" ? "Técnico / Agente" : "Usuário / Cliente"}
             </span>
+            {user.roles && user.roles.length > 0 && (
+              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {user.roles.map(r => (
+                  <span key={r} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, background: "rgba(4,102,200,0.12)", color: T.brand, fontWeight: 600, letterSpacing: "0.04em" }}>
+                    {r}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        {[["Nome", user.name], ["E-mail", user.email], ["Papel", role === "agent" ? "Agente de Suporte" : "Cliente"]].map(([k, v]) => (
+        {[["Nome", user.name], ["E-mail", user.email], ["Papel", role === "agent" ? "Agente de Suporte" : "Cliente"], ["Roles (Core)", (user.roles && user.roles.length > 0) ? user.roles.join(", ") : "—"]].map(([k, v]) => (
           <div key={k} style={{ display: "flex", padding: "13px 0", borderBottom: `1px solid ${T.borderSubtle}`, alignItems: "center" }}>
             <span style={{ color: T.textMuted, fontSize: 13, minWidth: 90 }}>{k}</span>
             <span style={{ color: T.textSecondary, fontSize: 13 }}>{v}</span>
@@ -1642,74 +1973,128 @@ export default function App() {
   // Map auth/profile object -> local user shape used by the app
   const buildUserFromProfile = (profile, inferredRole) => {
     if (!profile) return null;
+    // name pode vir vazio do Core Engine — usa email como fallback legível
+    const displayName = profile.name || profile.full_name || profile.username
+      || (profile.email ? profile.email.split("@")[0] : null)
+      || (inferredRole === "agent" ? USERS_DB.agent.name : USERS_DB.user.name);
+    const avatarSrc = profile.avatar
+      ? String(profile.avatar).slice(0, 2).toUpperCase()
+      : displayName.slice(0, 2).toUpperCase();
     return {
       id: profile.id || (inferredRole === "agent" ? USERS_DB.agent.id : USERS_DB.user.id),
-      name: profile.name || profile.full_name || profile.username || (inferredRole === "agent" ? USERS_DB.agent.name : USERS_DB.user.name),
+      name: displayName,
       email: profile.email || "",
       role: inferredRole,
-      avatar: (profile.avatar && String(profile.avatar).slice(0,2).toUpperCase()) || (inferredRole === "agent" ? USERS_DB.agent.avatar : USERS_DB.user.avatar),
+      roles: profile.roles || [],
+      avatar: avatarSrc,
     };
   };
   
   const loadTickets = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/tickets`);
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/api/v1/tickets`, {
+        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      });
       if (!res.ok) throw new Error("Falha ao buscar tickets");
       const data = await res.json();
       const mapped = data.items.map(t => {
-        const u = Object.values(USERS_DB).find(u => u.id === t.user_id) || USERS_DB.user;
+        const u = Object.values(USERS_DB).find(u => u.id === t.user_id);
         return {
           id: t.id,
+          shortId: `SD-${String(t.id).replace(/-/g, "").slice(0, 6).toUpperCase()}`,
           title: t.title,
           desc: t.description,
           status: t.status,
           priority: t.priority,
           cat: t.category,
-          user: u.name,
-          user_id: u.id,
+          user: u ? u.name : (t.user_id || "Usuário"),
+          user_id: t.user_id || "",
           created: new Date(t.created_at).toLocaleDateString("pt-BR"),
+          _created_iso: t.created_at,
           msgs: []
         };
       });
-      setTickets(mapped);
+
+      // Só atualiza o estado se algo realmente mudou — evita re-render
+      // desnecessário (e a tela piscando) a cada ciclo de polling.
+      // Preserva também as msgs já carregadas em memória para cada ticket.
+      setTickets(prev => {
+        const prevMap = Object.fromEntries(prev.map(t => [t.id, t]));
+        let changed = mapped.length !== prev.length;
+        const merged = mapped.map(t => {
+          const old = prevMap[t.id];
+          if (!old) { changed = true; return t; }
+          // Checa se algum campo relevante mudou (ignora msgs, que são geridas separado)
+          const diff =
+            old.title    !== t.title   ||
+            old.status   !== t.status  ||
+            old.priority !== t.priority||
+            old.cat      !== t.cat     ||
+            old.user_id  !== t.user_id;
+          if (diff) changed = true;
+          // Preserva as mensagens já em memória
+          return diff ? { ...t, msgs: old.msgs } : old;
+        });
+        return changed ? merged : prev;
+      });
     } catch (e) {
-      console.error(e);
-      setTickets(TICKETS_INIT); // Fallback se o backend estiver fora
+      console.error("Falha ao carregar tickets:", e);
     }
   };
   
   useEffect(() => {
-    if (role) loadTickets();
+    if (!role) return;
+
+    // Carga inicial
+    loadTickets();
+
+    // BUG FIX: polling a cada 5s para atualizar a lista de tickets.
+    // Sem isso, novos tickets criados pelo outro lado (agente ou usuário)
+    // só aparecem após logout/login — o estado local nunca era atualizado.
+    const ticketInterval = setInterval(() => {
+      loadTickets();
+    }, 5000);
+
+    return () => clearInterval(ticketInterval);
   }, [role]);
   
   const handleCreate = async (form) => {
-    try {
-      const payload = {
-        title: form.title,
-        description: form.desc,
-        status: "pending",
-        priority: form.priority,
-        category: form.cat,
-        user_id: user.id
-      };
-      const res = await fetch(`${API_BASE}/api/v1/tickets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        const novo = await res.json();
-        await loadTickets();
-        setActiveTicket(novo.id);
-      }
-    } catch(e) {
-      console.error(e);
+    // UUID regex — só manda user_id se for um UUID válido (evita 422/500 com "demo-agent" etc.)
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const safeUuid = (id) => (id && UUID_RE.test(id) ? id : null);
+
+    const payload = {
+      title: form.title.trim(),
+      description: form.desc.trim(),
+      status: "pending",
+      priority: form.priority || "normal",
+      category: form.cat || null,
+      // agente: client_id do form (se vier) ou null; usuário: próprio id se for UUID válido
+      user_id: role === "agent" ? safeUuid(form.client_id) : safeUuid(user.id),
+    };
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/api/v1/tickets`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg = body?.detail || body?.message || `Erro ${res.status}`;
+      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
+    const novo = await res.json();
+    await loadTickets();
+    setActiveTicket(novo.id);
   };
 
   const PAGE_TITLE = {
     dashboard: "Dashboard", tickets: "Tickets", messages: "Mensagens",
-    knowledge: "Base de Conhecimento", churn: "Análise de Churn", settings: "Configurações",
+    knowledge: "Base de Conhecimento", sla: "Painel de SLA", churn: "Análise de Churn", settings: "Configurações",
   };
 
   const showNewBtn = (page === "dashboard" || page === "tickets");
@@ -1734,13 +2119,14 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Topbar title={PAGE_TITLE[page]} onNew={showNewBtn ? () => setShowNew(true) : undefined} />
 
-        <div style={{ flex: 1, overflowY: ["messages", "knowledge", "churn"].includes(page) ? "hidden" : "auto", background: T.bgApp }}>
+        <div style={{ flex: 1, overflowY: ["messages", "knowledge", "churn", "sla"].includes(page) ? "hidden" : "auto", background: T.bgApp }}>
           {page === "dashboard" && role === "agent" && <DashboardAgent tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} user={user} />}
           {page === "dashboard" && role === "user"  && <DashboardUser  user={user} tickets={tickets} setPage={setPage} setActiveTicket={setActiveTicket} />}
           {page === "tickets"   && role === "agent" && <TicketsBoard tickets={tickets} setTickets={setTickets} activeTicket={activeTicket} setActiveTicket={setActiveTicket} setPage={setPage} />}
           {page === "tickets"   && role === "user"  && <TicketsUser  tickets={tickets} user={user} setActiveTicket={setActiveTicket} setPage={setPage} />}
           {page === "messages"  && <Mensagens  tickets={tickets} setTickets={setTickets} user={user} role={role} activeId={activeTicket} setActiveId={setActiveTicket} />}
           {page === "knowledge" && <KnowledgeBase role={role} tickets={tickets} />}
+          {page === "sla"       && role === "agent" && <SlaPanel tickets={tickets} />}
           {page === "churn"     && role === "agent" && <ChurnAnalysis tickets={tickets} />}
           {page === "settings"  && <Settings user={user} role={role} />}
         </div>
@@ -1749,7 +2135,7 @@ export default function App() {
       {showNew && (
         <NovoTicketModal
           onClose={() => setShowNew(false)}
-          onCreate={form => { handleCreate(form); setShowNew(false); }} />
+          onCreate={async (form) => { await handleCreate(form); setShowNew(false); }} />
       )}
     </div>
   );

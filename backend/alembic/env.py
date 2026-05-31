@@ -1,11 +1,8 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
-# Import all models so Alembic can detect them
-# Dynamically import all submodules under `app.modules` so new models
-# are automatically registered in `Base.metadata` without manual edits.
 import importlib
 import pkgutil
 import app.modules  # noqa: F401
@@ -15,8 +12,6 @@ for finder, name, ispkg in pkgutil.walk_packages(package.__path__, package.__nam
     try:
         importlib.import_module(name)
     except Exception:
-        # ignore problematic imports to avoid breaking Alembic env;
-        # failing modules can be fixed separately
         pass
 
 from app.config.config import settings
@@ -38,6 +33,9 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # Garante que o Alembic trabalhe dentro do schema correto
+        include_schemas=True,
+        version_table_schema="service_desk",
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -50,9 +48,16 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Cria o schema se não existir antes de qualquer migração
+        connection.execute(text("CREATE SCHEMA IF NOT EXISTS service_desk"))
+        connection.execute(text("SET search_path TO service_desk, public"))
+        connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            include_schemas=True,
+            version_table_schema="service_desk",
         )
         with context.begin_transaction():
             context.run_migrations()
