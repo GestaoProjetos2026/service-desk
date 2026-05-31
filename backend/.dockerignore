@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+.venv`/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Project
+.env.local
+tests/
+docs/
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
+PRD.md
+Definição de Políticas de SLA.md
+
+# Database
+mysql_data/
+*.db
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/

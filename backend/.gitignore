@@ -1,0 +1,7 @@
+﻿
+.env.production
+.env.staging
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
