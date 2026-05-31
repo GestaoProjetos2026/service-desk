@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import * as authApi from "./api/auth.js";
 import * as ticketsApi from "./api/tickets.js";
-import { ApiError, getToken } from "./api/client.js";
+import { ApiError, getToken, API_BASE } from "./api/client.js";
 
 // ─── DESIGN TOKENS (ADR Comitê UX/UI) ────────────────────────────────────────
 const T = {
@@ -149,9 +149,7 @@ const USERS_DB = {
   user:  { id: "22222222-2222-2222-2222-222222222222", name: "Diego Ramos",  email: "diego@empresa.com",  role: "user",  avatar: "DR" },
 };
 // ─── INTEGRAÇÃO FISCAL (Squad 2) ─────────────────────────────────────────────
-const API_BASE = window.location.hostname.includes("localhost") || window.location.hostname.includes("127.0.0.1")
-  ? ""
-  : window.location.origin.replace("//app.", "//api.");
+// API_BASE importado de ./api/client.js
 
 async function buscarHistoricoFiscal(sku) {
   try {
